@@ -1,0 +1,11 @@
+build/
+install/
+log/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.DS_Store
+Thumbs.db
+.vscode/
+*Zone.Identifier*
+worlds/lab_world.sdf
