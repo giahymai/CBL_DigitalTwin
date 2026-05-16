@@ -27,13 +27,13 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 FARM_ZONES = [
-    {'name': 'spray_zone_A',     'x':  1.0, 'y':  0.0, 'radius': 0.35, 'action': 'spray',
+    {'name': 'spray_zone_A',     'x':  3, 'y':  3, 'radius': 2, 'action': 'spray',
      'description': 'Striga-infested zone — targeted herbicide spray'},
-    {'name': 'fertilize_zone_B', 'x':  0.0, 'y':  1.0, 'radius': 0.35, 'action': 'fertilize',
+    {'name': 'fertilize_zone_B', 'x':  0.0, 'y':  1.0, 'radius': 2, 'action': 'fertilize',
      'description': 'Low-NPK zone — variable-rate fertilizer application'},
-    {'name': 'spray_zone_C',     'x': -1.0, 'y':  0.0, 'radius': 0.35, 'action': 'spray',
+    {'name': 'spray_zone_C',     'x': -1.0, 'y':  0.0, 'radius': 2, 'action': 'spray',
      'description': 'Striga-infested zone — targeted herbicide spray'},
-    {'name': 'fertilize_zone_D', 'x':  0.0, 'y': -1.0, 'radius': 0.35, 'action': 'fertilize',
+    {'name': 'fertilize_zone_D', 'x':  0.0, 'y': -1.0, 'radius': 2, 'action': 'fertilize',
      'description': 'Low-NPK zone — variable-rate fertilizer application'},
 ]
 
@@ -48,7 +48,7 @@ class ZoneMonitorNode(Node):
         self._in_zone     = {z['name']: False for z in FARM_ZONES}
         self._trigger_cnt = {z['name']: 0     for z in FARM_ZONES}
 
-        self.create_subscription(Odometry, '/odom', self._odom_cb, 10)
+        self.create_subscription(Odometry, '/sim/odom', self._odom_cb, 10)
         self._pub = self.create_publisher(String, '/farm_action', 10)
         self.create_service(Trigger, '/get_zone_status', self._status_srv)
 
