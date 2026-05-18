@@ -52,23 +52,23 @@ def generate_launch_description():
     )
 
 
-    #spawn_robot = IncludeLaunchDescription(
-    #    PythonLaunchDescriptionSource(os.path.join(launch_file_dir, 'spawn_turtlebot3.launch.py')),
-    #    launch_arguments={'x_pose': '3', 'y_pose': '3'}.items()
-    #)
-
-    spawn_robot = Node(
-       package='ros_gz_sim',
-       executable='create',
-       arguments=[
-           '-topic', '/sim/robot_description',
-           '-name', 'turtlebot3',
-           '-x', '3',
-           '-y', '3',
-           '-z', '0.1'
-       ],
-       output='screen'
+    spawn_robot = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(launch_file_dir, 'spawn_turtlebot3.launch.py')),
+        launch_arguments={'x_pose': '3', 'y_pose': '3'}.items()
     )
+
+    #spawn_robot = Node(
+    #   package='ros_gz_sim',
+    #   executable='create',
+    #   arguments=[
+    #       '-topic', '/sim/robot_description',
+    #       '-name', 'turtlebot3',
+    #       '-x', '3',
+    #       '-y', '3',
+    #       '-z', '0.1'
+    #   ],
+    #   output='screen'
+    #)
 
     return LaunchDescription([
         PushRosNamespace('sim'),
