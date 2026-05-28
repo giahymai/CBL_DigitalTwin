@@ -2380,5 +2380,62 @@
         </visual>
       </link>
     </model>
+    <!-- Farm Zone Markers: Red = spray, Green = fertilize -->
+
+    <model name="spray_zone_A">
+      <static>true</static>
+      <pose>3.0 3.0 0.1 0 0 0</pose>
+      <link name="link">
+        <visual name="vis">
+          <geometry><sphere><radius>0.12</radius></sphere></geometry>
+          <material>
+            <ambient>0.9 0.1 0.1 1</ambient>
+            <diffuse>0.9 0.1 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="fertilize_zone_B">
+      <static>true</static>
+      <pose>0.0 1.0 0.1 0 0 0</pose>
+      <link name="link">
+        <visual name="vis">
+          <geometry><sphere><radius>0.12</radius></sphere></geometry>
+          <material>
+            <ambient>0.1 0.8 0.1 1</ambient>
+            <diffuse>0.1 0.8 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="spray_zone_C">
+      <static>true</static>
+      <pose>-1.0 0.0 0.1 0 0 0</pose>
+      <link name="link">
+        <visual name="vis">
+          <geometry><sphere><radius>0.12</radius></sphere></geometry>
+          <material>
+            <ambient>0.9 0.1 0.1 1</ambient>
+            <diffuse>0.9 0.1 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="fertilize_zone_D">
+      <static>true</static>
+      <pose>0.0 -1.0 0.1 0 0 0</pose>
+      <link name="link">
+        <visual name="vis">
+          <geometry><sphere><radius>0.12</radius></sphere></geometry>
+          <material>
+            <ambient>0.1 0.8 0.1 1</ambient>
+            <diffuse>0.1 0.8 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
   </world>
 </sdf>
