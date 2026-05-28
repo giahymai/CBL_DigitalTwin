@@ -48,7 +48,10 @@ class ZoneMonitorNode(Node):
         self._in_zone     = {z['name']: False for z in FARM_ZONES}
         self._trigger_cnt = {z['name']: 0     for z in FARM_ZONES}
 
-        self.create_subscription(Odometry, '/sim/odom', self._odom_cb, 10)
+        self.declare_parameter('odom_topic', '/sim/odom')
+        odom_topic = self.get_parameter('odom_topic').value
+        self.create_subscription(Odometry, odom_topic, self._odom_cb, 10)
+        self.get_logger().info(f'SUB odom: {odom_topic}')
         self._pub = self.create_publisher(String, '/farm_action', 10)
         self.create_service(Trigger, '/get_zone_status', self._status_srv)
 
