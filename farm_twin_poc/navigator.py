@@ -37,7 +37,7 @@ class NavigatorNode(Node):
         self.declare_parameter('max_linear',        0.15)
         self.declare_parameter('max_angular',       0.5)
         self.declare_parameter('goal_tolerance',    0.25)
-        self.declare_parameter('obstacle_distance', 0.45)
+        self.declare_parameter('obstacle_distance', 0.35)
         self.declare_parameter('front_angle_deg',   40.0)
 
         self._max_lin   = float(self.get_parameter('max_linear').value)
@@ -174,7 +174,10 @@ class NavigatorNode(Node):
                 bearing     = math.atan2(ty - self._y, tx - self._x)
                 heading_err = self._wrap(bearing - self._yaw)
                 angular     = max(-self._max_ang, min(self._max_ang, 1.5 * heading_err))
-                linear      = self._max_lin if abs(heading_err) < 0.5 else 0.0
+                # Move and turn simultaneously — no stopping to turn
+                # Slow down when heading error is large but don't stop
+                scale  = max(0.3, 1.0 - abs(heading_err) / math.pi)
+                linear = self._max_lin * scale
                 self._publish(linear, angular)
 
             time.sleep(0.1)
