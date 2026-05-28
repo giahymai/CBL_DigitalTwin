@@ -2384,7 +2384,7 @@
 
     <model name="spray_zone_A">
       <static>true</static>
-      <pose>3.0 3.0 0.1 0 0 0</pose>
+      <pose>0.0 2.0 0.1 0 0 0</pose>
       <link name="link">
         <visual name="vis">
           <geometry><sphere><radius>0.12</radius></sphere></geometry>
@@ -2398,7 +2398,7 @@
 
     <model name="fertilize_zone_B">
       <static>true</static>
-      <pose>0.0 1.0 0.1 0 0 0</pose>
+      <pose>3.0 2.0 0.1 0 0 0</pose>
       <link name="link">
         <visual name="vis">
           <geometry><sphere><radius>0.12</radius></sphere></geometry>
@@ -2412,7 +2412,7 @@
 
     <model name="spray_zone_C">
       <static>true</static>
-      <pose>-1.0 0.0 0.1 0 0 0</pose>
+      <pose>3.0 -1.0 0.1 0 0 0</pose>
       <link name="link">
         <visual name="vis">
           <geometry><sphere><radius>0.12</radius></sphere></geometry>
