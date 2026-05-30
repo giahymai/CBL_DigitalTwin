@@ -1,33 +1,33 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
+from launch.conditions import IfCondition, UnlessCondition
 
 
 def generate_launch_description():
     """
-    farm_twin.launch.py — Full Digital Twin system (Nodes 2+3+4+5).
+    farm_twin.launch.py — Full Digital Twin system (Nodes 2+3+4+5)
 
-    AT HOME (Gazebo sim):
-      T1: ros2 launch farm_twin_poc gazebo_twin.launch.py
-      T2: ros2 launch farm_twin_poc farm_twin.launch.py
-      T3: (optional teleop) ros2 run turtlebot3_teleop teleop_keyboard
-              --ros-args -r /cmd_vel:=/cmd_vel_raw
-      OR start autonomous: ros2 service call /start_navigation std_srvs/srv/Trigger
+    AT HOME (Gazebo simulation):
+      ros2 launch farm_twin_poc farm_twin.launch.py
 
     AT LAB (real robot):
-      T1: ssh robot → ros2 launch turtlebot3_bringup robot.launch.py
-      T2: ros2 launch farm_twin_poc gazebo_twin.launch.py
-      T3: ros2 launch farm_twin_poc farm_twin.launch.py
-      T4: teleop OR ros2 service call /start_navigation std_srvs/srv/Trigger
+      ros2 launch farm_twin_poc farm_twin.launch.py lab:=true
 
-    Monitor:
-      ros2 topic echo /farm_action
-      ros2 topic echo /dt/status
-      ros2 topic echo /sim/cmd_vel
-      ros2 topic echo /navigator/status
-      ros2 service call /get_dt_log       std_srvs/srv/Trigger
-      ros2 service call /get_twin_status  std_srvs/srv/Trigger
+    The 'lab' argument switches all topic names automatically:
+      lab:=false  → /sim/scan, /sim/odom  (Gazebo topics)
+      lab:=true   → /scan, /odom          (real robot topics)
     """
+    lab_arg = DeclareLaunchArgument(
+        'lab',
+        default_value='false',
+        description='false = at home (Gazebo) | true = lab session (real robot)',
+    )
+    lab = LaunchConfiguration('lab')
+
     return LaunchDescription([
+        lab_arg,
 
         # Node 2: Twin Safety
         Node(
@@ -46,16 +46,21 @@ def generate_launch_description():
             output='screen',
         ),
 
-        # Node 3: Zone Monitor
+        # Node 3: Zone Monitor — at home uses /sim/odom, at lab uses /odom
         Node(
             package='farm_twin_poc',
             executable='zone_monitor_node',
             name='zone_monitor_node',
-            parameters=[{
-                # AT HOME (Gazebo): '/sim/odom'
-                # AT LAB (real robot): '/odom'
-                'odom_topic': '/sim/odom',
-            }],
+            parameters=[{'odom_topic': '/sim/odom'}],
+            condition=UnlessCondition(lab),
+            output='screen',
+        ),
+        Node(
+            package='farm_twin_poc',
+            executable='zone_monitor_node',
+            name='zone_monitor_node',
+            parameters=[{'odom_topic': '/odom'}],
+            condition=IfCondition(lab),
             output='screen',
         ),
 
@@ -67,22 +72,39 @@ def generate_launch_description():
             output='screen',
         ),
 
-        # Node 5: Autonomous Navigator (no Nav2 needed)
+        # Node 5: Navigator — at home uses /sim/*, at lab uses real topics
         Node(
             package='farm_twin_poc',
             executable='navigator_node',
             name='navigator_node',
             parameters=[{
-                # AT HOME (Gazebo): scan_topic='/sim/scan', odom_topic='/sim/odom'
-                # AT LAB (real robot): scan_topic='/scan', odom_topic='/odom'
                 'scan_topic':        '/sim/scan',
                 'odom_topic':        '/sim/odom',
+                'battery_topic':     '/battery_state',
                 'max_linear':        0.15,
-                'max_angular':       0.5,
+                'max_angular':       0.6,
                 'goal_tolerance':    0.25,
-                'obstacle_distance': 0.45,
-                'front_angle_deg':   40.0,
+                'obstacle_distance': 0.40,
+                'front_angle_deg':   45.0,
             }],
+            condition=UnlessCondition(lab),
+            output='screen',
+        ),
+        Node(
+            package='farm_twin_poc',
+            executable='navigator_node',
+            name='navigator_node',
+            parameters=[{
+                'scan_topic':        '/scan',
+                'odom_topic':        '/odom',
+                'battery_topic':     '/battery_state',
+                'max_linear':        0.15,
+                'max_angular':       0.6,
+                'goal_tolerance':    0.25,
+                'obstacle_distance': 0.40,
+                'front_angle_deg':   45.0,
+            }],
+            condition=IfCondition(lab),
             output='screen',
         ),
     ])
