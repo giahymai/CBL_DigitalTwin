@@ -216,6 +216,7 @@ ros2 launch farm_twin_poc gazebo_twin.launch.py
 **Terminal 2 — Farm Twin nodes:**
 ```bash
 ros2 launch farm_twin_poc farm_twin.launch.py
+# Default: lab:=false (uses /sim/scan, /sim/odom from Gazebo)
 ```
 
 **Terminal 3 — Teleop:**
@@ -253,6 +254,13 @@ Stop:
 ```bash
 ros2 service call /stop_navigation std_srvs/srv/Trigger
 ```
+
+Return to start position (manual):
+```bash
+ros2 service call /return_home std_srvs/srv/Trigger
+```
+
+Return home automatically when battery is low (< 20% or < 11V) — no action needed, triggers automatically at lab with real robot.
 
 ---
 
@@ -356,17 +364,9 @@ ros2 launch farm_twin_poc gazebo_twin.launch.py
 
 **Terminal 3 — Farm Twin system:**
 ```bash
-ros2 launch farm_twin_poc farm_twin.launch.py
+ros2 launch farm_twin_poc farm_twin.launch.py lab:=true
+# lab:=true switches all topics to real robot: /scan, /odom
 ```
-
-> **Important:** Before running at lab, change these 3 lines in `farm_twin.launch.py`:
-> ```python
-> # zone_monitor_node:
-> 'odom_topic': '/odom',       # was '/sim/odom'
-> # navigator_node:
-> 'scan_topic': '/scan',       # was '/sim/scan'
-> 'odom_topic': '/odom',       # was '/sim/odom'
-> ```
 
 **Terminal 4 — Teleop (manual mode):**
 ```bash
@@ -406,7 +406,31 @@ ros2 service call /stop_navigation std_srvs/srv/Trigger
 
 ---
 
-## B6. Demo the 3 DTAS criteria
+## B6. Battery monitoring + Return home
+
+The robot automatically returns to its start position when battery is low
+(< 20% or < 11V). This triggers without any manual intervention.
+
+**Manual return home at any time:**
+```bash
+ros2 service call /return_home std_srvs/srv/Trigger
+```
+
+Monitor battery + navigation state:
+```bash
+ros2 topic echo /navigator/status
+# Shows: state=... | battery=85% | returning=False | completed=[...]
+```
+
+The home position is recorded automatically when the robot first publishes
+`/odom` — no hardcoded coordinates needed.
+
+> **At home (Gazebo):** `/battery_state` may not publish → battery monitoring
+> inactive. Use `/return_home` service manually to test return behaviour.
+
+---
+
+## B7. Demo the 3 DTAS criteria
 
 ### ① Bi-directional Communication
 ```bash
@@ -432,7 +456,7 @@ ros2 service call /get_dt_log std_srvs/srv/Trigger
 
 ---
 
-## B7. All monitoring commands
+## B8. All monitoring commands
 
 ```bash
 ros2 topic echo /farm_action
@@ -448,12 +472,13 @@ ros2 service call /get_dt_status    std_srvs/srv/Trigger
 ros2 service call /get_dt_log       std_srvs/srv/Trigger
 ros2 service call /start_navigation std_srvs/srv/Trigger
 ros2 service call /stop_navigation  std_srvs/srv/Trigger
+ros2 service call /return_home      std_srvs/srv/Trigger
 ros2 service call /nav_status       std_srvs/srv/Trigger
 ```
 
 ---
 
-## B8. Adjust zone positions
+## B9. Adjust zone positions
 
 Drive robot to each zone location, check tọa độ:
 ```bash
@@ -473,7 +498,7 @@ git pull && colcon build --packages-select farm_twin_poc && source install/setup
 
 ---
 
-## B9. Shutdown procedure
+## B10. Shutdown procedure
 
 1. `Ctrl+C` — Terminal 4 (teleop)
 2. `Ctrl+C` — Terminal 3 (farm twin nodes)
@@ -501,6 +526,8 @@ git pull && colcon build --packages-select farm_twin_poc && source install/setup
 Check `ros2 topic hz /odom`.
 
 **Robot stuck during navigation:** Automatic escape after 4s — wait or call `/stop_navigation`.
+
+**Robot not returning home:** Check `/odom` is publishing. Call `/nav_status` to see home position.
 
 **"failed to spin map subscription":**
 ```bash
