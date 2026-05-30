@@ -32,11 +32,19 @@ class DTLoggerNode(Node):
         self._log          = []
         self._spray_count  = 0
         self._fert_count   = 0
-        self._x = self._y  = 0.0
+        self._x = self._y = 0.0
+        self._sim_x = self._sim_y = 0.0
         self._zones        = set()
 
         self.create_subscription(String,   '/farm_action', self._action_cb, 10)
-        self.create_subscription(Odometry, '/odom',        self._odom_cb,   10)
+        # Track both real robot AND Gazebo twin positions
+        # If state sync works → real_pos ≈ sim_pos
+        self.declare_parameter('real_odom_topic', '/odom')
+        self.declare_parameter('sim_odom_topic',  '/sim/odom')
+        self.create_subscription(Odometry,
+            self.get_parameter('real_odom_topic').value, self._odom_cb,     10)
+        self.create_subscription(Odometry,
+            self.get_parameter('sim_odom_topic').value,  self._sim_odom_cb, 10)
         self._status_pub = self.create_publisher(String, '/dt/status', 10)
         self.create_service(Trigger, '/get_dt_status', self._status_srv)
         self.create_service(Trigger, '/get_dt_log',    self._log_srv)
@@ -49,6 +57,9 @@ class DTLoggerNode(Node):
 
     def _odom_cb(self, msg):
         self._x, self._y = msg.pose.pose.position.x, msg.pose.pose.position.y
+
+    def _sim_odom_cb(self, msg):
+        self._sim_x, self._sim_y = msg.pose.pose.position.x, msg.pose.pose.position.y
 
     def _action_cb(self, msg):
         try:
@@ -73,8 +84,13 @@ class DTLoggerNode(Node):
         self._status_pub.publish(msg)
 
     def _build(self):
+        import math
+        sync_error = round(math.hypot(
+            self._x - self._sim_x, self._y - self._sim_y), 3)
         return {
-            'position':          {'x': round(self._x, 3), 'y': round(self._y, 3)},
+            'real_position':     {'x': round(self._x, 3),     'y': round(self._y, 3)},
+            'sim_position':      {'x': round(self._sim_x, 3), 'y': round(self._sim_y, 3)},
+            'sync_error_m':      sync_error,
             'spray_actions':     self._spray_count,
             'fertilize_actions': self._fert_count,
             'total_actions':     len(self._log),

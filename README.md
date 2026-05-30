@@ -37,9 +37,14 @@ ros2 topic echo /cmd_vel --once  # DE → PE
 - `/cmd_vel` → real robot (Physical Entity)
 - `/sim/cmd_vel` → Gazebo twin (Digital Entity simulation)
 
+`dt_logger_node` tracks both positions and computes `sync_error_m`:
+
 ```bash
-ros2 topic echo /sim/cmd_vel     # same values as /cmd_vel → State Sync
+ros2 topic echo /sim/cmd_vel     # same values as /cmd_vel → motion sync
+ros2 topic echo /dt/status       # shows real_position, sim_position, sync_error_m
 ros2 service call /get_twin_status std_srvs/srv/Trigger
+ros2 service call /get_dt_status   std_srvs/srv/Trigger
+# sync_error_m close to 0 → strong State Synchronisation evidence
 ```
 
 ### ③ Object/Environment Interaction

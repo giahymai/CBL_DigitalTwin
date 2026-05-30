@@ -65,10 +65,27 @@ def generate_launch_description():
         ),
 
         # Node 4: Digital Entity Logger
+        # Tracks both real_position and sim_position → sync_error_m shows how well they match
         Node(
             package='farm_twin_poc',
             executable='dt_logger_node',
             name='dt_logger_node',
+            parameters=[{
+                'real_odom_topic': '/sim/odom',  # at home: Gazebo is the "real"
+                'sim_odom_topic':  '/sim/odom',  # same source
+            }],
+            condition=UnlessCondition(lab),
+            output='screen',
+        ),
+        Node(
+            package='farm_twin_poc',
+            executable='dt_logger_node',
+            name='dt_logger_node',
+            parameters=[{
+                'real_odom_topic': '/odom',      # at lab: real robot
+                'sim_odom_topic':  '/sim/odom',  # Gazebo twin
+            }],
+            condition=IfCondition(lab),
             output='screen',
         ),
 
