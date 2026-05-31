@@ -27,13 +27,13 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 FARM_ZONES = [
-    {'name': 'spray_zone_A',     'x':  0.0, 'y':  2.0, 'radius': 0.35, 'action': 'spray',
+    {'name': 'spray_zone_A',     'x':  0.5, 'y':  2.7, 'radius': 0.35, 'action': 'spray',
      'description': 'Striga-infested zone — targeted herbicide spray'},
-    {'name': 'fertilize_zone_B', 'x':  0.0, 'y':  1.0, 'radius': 0.35, 'action': 'fertilize',
+    {'name': 'fertilize_zone_B', 'x':  3.5, 'y':  2.7, 'radius': 0.35, 'action': 'fertilize',
      'description': 'Low-NPK zone — variable-rate fertilizer application'},
-    {'name': 'spray_zone_C',     'x': -1.0, 'y':  0.0, 'radius': 0.35, 'action': 'spray',
+    {'name': 'spray_zone_C',     'x':  3.5, 'y':  0.7, 'radius': 0.35, 'action': 'spray',
      'description': 'Striga-infested zone — targeted herbicide spray'},
-    {'name': 'fertilize_zone_D', 'x':  0.0, 'y': -1.0, 'radius': 0.35, 'action': 'fertilize',
+    {'name': 'fertilize_zone_D', 'x':  0.5, 'y':  0.7, 'radius': 0.35, 'action': 'fertilize',
      'description': 'Low-NPK zone — variable-rate fertilizer application'},
 ]
 
