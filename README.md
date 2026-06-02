@@ -89,7 +89,7 @@ Gazebo twin (PushRosNamespace 'sim'):
 
 > **Two navigation modes:**
 > - `navigator_node` (reactive, executable `navigator_node`, file `navigator.py`) — hand-coded go-to-goal + obstacle avoidance. No map needed. Used by `farm_twin.launch.py`.
-> - `nav2_navigator` (Nav2 Simple Commander, executable `nav2_navigator`, file `navigator_node.py`) — Nav2 plans the path. **Needs a SLAM map + Nav2 running.** Used by `navigation.launch.py` (lab) and `gazebo_nav2_demo.launch.py` (home). Adds auto return-home on low battery.
+> - `nav2_navigator` (Nav2 Simple Commander, executable `nav2_navigator`, file `navigator_node.py`) — Nav2 plans the path. Used by `navigation.launch.py` (lab — needs your real SLAM map `~/map.yaml`) and `gazebo_nav2_demo.launch.py` (home — uses the bundled `maps/lab_map.yaml`, no SLAM needed). Adds auto return-home on low battery.
 
 ---
 
@@ -110,9 +110,12 @@ farm_twin_poc/
 │   ├── gazebo_nav2_demo.launch.py  Nav2 autonomous demo at home (Gazebo)
 │   └── navigation.launch.py      Nav2 + nodes 3+4+5b on real robot (lab)
 ├── scripts/
-│   └── map_to_world.py        SLAM map → Gazebo SDF world
-└── worlds/
-    └── lab_world.sdf          Lab room (with colored zone markers)
+│   ├── map_to_world.py        SLAM map → Gazebo SDF world
+│   └── world_to_map.py        Gazebo SDF world → Nav2 map (bundled at-home map)
+├── worlds/
+│   └── lab_world.sdf          Lab room (with colored zone markers)
+└── maps/
+    └── lab_map.yaml / .pgm    Nav2 map generated from lab_world.sdf (bundled)
 ```
 
 ---
@@ -277,17 +280,30 @@ Return home automatically when battery is low (< 20% or < 11V) — no action nee
 ### Mode 3 — Nav2 autonomous navigation (planned path)
 
 Use this when you want **Nav2 to plan the path** to each zone instead of the
-reactive go-to-goal. Needs your SLAM map. Runs in the lab world (no `sim`
-namespace) so the TF tree is clean.
+reactive go-to-goal. Runs in the lab world (no `sim` namespace) so the TF tree
+is clean.
+
+**No map needed at home** — the package ships `maps/lab_map.yaml`, generated
+from `lab_world.sdf` via `scripts/world_to_map.py`, so the Gazebo walls and the
+Nav2 map match exactly. The robot spawns at the world origin (0, 0) so that
+`/odom` lines up with the map frame and the farm zones trigger correctly.
 
 **Single terminal — everything (Gazebo + Nav2 + nodes):**
 ```bash
-ros2 launch farm_twin_poc gazebo_nav2_demo.launch.py map:=$HOME/map.yaml
+ros2 launch farm_twin_poc gazebo_nav2_demo.launch.py
+# Override the map only if you really want your own: map:=$HOME/map.yaml
 ```
+
+> Regenerate the bundled map only if you change the **walls** in
+> `lab_world.sdf` (moving zone markers does not need it):
+> ```bash
+> python3 scripts/world_to_map.py worlds/lab_world.sdf maps/lab_map
+> colcon build --packages-select farm_twin_poc && source install/setup.bash
+> ```
 
 Wait until the log shows **"Nav2 is active"**. By default this demo seeds the
 initial pose automatically (`set_initial_pose:=true`); if it didn't, click
-**"2D Pose Estimate"** in RViz at the robot spawn. Then:
+**"2D Pose Estimate"** in RViz at the robot spawn (0, 0). Then:
 ```bash
 ros2 service call /start_navigation std_srvs/srv/Trigger
 ```

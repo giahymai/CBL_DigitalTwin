@@ -54,15 +54,25 @@ def generate_launch_description():
     y_pose       = LaunchConfiguration('y_pose')
 
     default_world = os.path.join(pkg_share, 'worlds', 'lab_world.sdf')
+    # Map bundled with the package, generated from lab_world.sdf via
+    # scripts/world_to_map.py. Matches the world 1:1 so the at-home demo runs
+    # with no manual SLAM. Override with map:=... to use your own.
+    default_map = os.path.join(pkg_share, 'maps', 'lab_map.yaml')
 
     launch_file_dir = os.path.join(pkg_tb3_gazebo, 'launch')
 
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='true'),
-        DeclareLaunchArgument('map', default_value=os.path.expanduser('~/map.yaml')),
+        DeclareLaunchArgument('map', default_value=default_map),
         DeclareLaunchArgument('world', default_value=default_world),
-        DeclareLaunchArgument('x_pose', default_value='3'),
-        DeclareLaunchArgument('y_pose', default_value='3'),
+        # Spawn at the WORLD ORIGIN (0,0). This makes odom == map == world: the
+        # robot's /odom (origin = spawn) coincides with the map frame, so the
+        # FARM_ZONES coords in zone_monitor_node (which reads /odom) line up with
+        # the Gazebo zone markers and the Nav2 goals. Mirrors the lab convention
+        # "zones are metres from robot start". Spawning elsewhere (e.g. 3,3)
+        # offsets /odom from the map and zone_monitor never fires /farm_action.
+        DeclareLaunchArgument('x_pose', default_value='0'),
+        DeclareLaunchArgument('y_pose', default_value='0'),
 
         # 1) Gazebo with the LAB world (no namespace).
         IncludeLaunchDescription(
@@ -136,7 +146,10 @@ def generate_launch_description():
             parameters=[{
                 'odom_topic':       '/odom',
                 'battery_topic':    '/battery_state',
-                'set_initial_pose': True,
+                'set_initial_pose': True,    # seed AMCL at home pose below
+                'home_x':           0.0,     # = spawn; return_home comes back here
+                'home_y':           0.0,
+                'home_yaw':         0.0,
                 'use_sim_time':     use_sim_time,
             }],
         ),

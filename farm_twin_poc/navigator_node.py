@@ -45,6 +45,7 @@ Run order
   3. ros2 service call /start_navigation std_srvs/srv/Trigger
 """
 import math
+import time
 import threading
 from typing import Optional
 
@@ -214,7 +215,11 @@ class NavigatorNode(Node):
                 self.get_logger().warn('[NAV] goal timeout — cancelling')
                 self._nav.cancelTask()
                 return False
-            rclpy.spin_once(self, timeout_sec=0.1)
+            # NOTE: do NOT rclpy.spin_once(self) here. main() already spins this
+            # node via rclpy.spin(node), and BasicNavigator spins its own node
+            # inside isTaskComplete(). Spinning the same global executor from two
+            # threads is explicitly forbidden by rclpy and corrupts the wait set.
+            time.sleep(0.1)
         return self._nav.getResult() == TaskResult.SUCCEEDED
 
     def _run_all(self):
@@ -257,9 +262,11 @@ class NavigatorNode(Node):
             self._state = 'idle'
 
     def _dwell(self, seconds: float):
+        # Wall-clock dwell so zone_monitor_node has time to fire /farm_action.
+        # Callbacks keep flowing via the main rclpy.spin(node); see _drive_to note.
         end = self.get_clock().now() + Duration(seconds=seconds)
         while self.get_clock().now() < end and not self._cancel_requested:
-            rclpy.spin_once(self, timeout_sec=0.1)
+            time.sleep(0.1)
 
     # ---------------- status ----------------
     def _broadcast(self):
