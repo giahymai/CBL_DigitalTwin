@@ -33,7 +33,7 @@ ARGS:
 import os
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from launch.substitutions import Command
@@ -52,6 +52,17 @@ def generate_launch_description():
     world        = LaunchConfiguration('world')
     x_pose       = LaunchConfiguration('x_pose')
     y_pose       = LaunchConfiguration('y_pose')
+    headless     = LaunchConfiguration('headless')
+
+    # headless:=true runs Gazebo as server only (-s), no 3D GUI window. On a
+    # machine WITHOUT a real GPU (e.g. Docker-in-WSL, where /dev/dri is absent)
+    # the ogre2 GUI software-renders and starves the sim, which makes /clock
+    # stutter and jump backwards ("Detected jump back in time"), killing Nav2's
+    # controller. Headless removes that load so Nav2 can run. You lose the 3D
+    # view, but RViz still shows the map/robot. set_initial_pose seeds AMCL so
+    # no manual "2D Pose Estimate" click is required.
+    gz_flags = PythonExpression(
+        ["'-s -r ' if '", headless, "' == 'true' else '-r '"])
 
     default_world = os.path.join(pkg_share, 'worlds', 'lab_world.sdf')
     # Map bundled with the package, generated from lab_world.sdf via
@@ -73,6 +84,10 @@ def generate_launch_description():
         # offsets /odom from the map and zone_monitor never fires /farm_action.
         DeclareLaunchArgument('x_pose', default_value='0'),
         DeclareLaunchArgument('y_pose', default_value='0'),
+        DeclareLaunchArgument(
+            'headless', default_value='false',
+            description='true = Gazebo server only (no GUI); use on GPU-less '
+                        'machines to avoid sim-clock jumps'),
 
         # 1) Gazebo with the LAB world (no namespace).
         IncludeLaunchDescription(
@@ -81,7 +96,7 @@ def generate_launch_description():
                     FindPackageShare('ros_gz_sim'), 'launch', 'gz_sim.launch.py'
                 ])
             ),
-            launch_arguments={'gz_args': ['-r ', world]}.items(),
+            launch_arguments={'gz_args': [gz_flags, world]}.items(),
         ),
 
         # 2) Spawn TurtleBot3 in the default namespace (clean TF tree).
