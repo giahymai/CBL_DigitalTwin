@@ -290,9 +290,23 @@ Nav2 map match exactly. The robot spawns at the world origin (0, 0) so that
 
 **Single terminal — everything (Gazebo + Nav2 + nodes):**
 ```bash
+# Machine WITH a GPU (native Linux lab laptop, or PC with a graphics card):
 ros2 launch farm_twin_poc gazebo_nav2_demo.launch.py
+
+# Machine WITHOUT a GPU (e.g. Docker-in-WSL at home): run Gazebo headless
+ros2 launch farm_twin_poc gazebo_nav2_demo.launch.py headless:=true
+
 # Override the map only if you really want your own: map:=$HOME/map.yaml
 ```
+
+> ⚠️ **No GPU? Use `headless:=true`.** Gazebo needs a GPU to render the 3D
+> window AND the robot's LiDAR. On a GPU-less machine the CPU can't keep up, the
+> sim clock stutters ("Detected jump back in time" floods the log), Nav2's
+> controller chokes and the robot freezes. `headless:=true` drops the 3D window
+> to cut that load — you still get **RViz** (map + robot + path) for the demo.
+> If even headless stalls, the container simply has no GPU access; run the demo
+> on a machine with a graphics card. **The lab session is unaffected** — there
+> Nav2 drives the real robot in real time, with no Gazebo and no sim clock.
 
 > Regenerate the bundled map only if you change the **walls** in
 > `lab_world.sdf` (moving zone markers does not need it):
