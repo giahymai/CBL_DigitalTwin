@@ -83,9 +83,13 @@ Gazebo twin (PushRosNamespace 'sim'):
 
 | Concept | Where |
 |---|---|
-| **Nodes** | `twin_safety_node`, `zone_monitor_node`, `dt_logger_node`, `navigator_node` |
+| **Nodes** | `twin_safety_node`, `zone_monitor_node`, `dt_logger_node`, `navigator_node` (reactive), `nav2_navigator` (Nav2) |
 | **Topics** | `/scan`, `/odom`, `/cmd_vel`, `/sim/cmd_vel`, `/farm_action`, `/dt/status`, `/navigator/status` |
-| **Services** | `/get_twin_status`, `/get_zone_status`, `/get_dt_status`, `/get_dt_log`, `/start_navigation`, `/stop_navigation`, `/nav_status` |
+| **Services** | `/get_twin_status`, `/get_zone_status`, `/get_dt_status`, `/get_dt_log`, `/start_navigation`, `/return_home`, `/stop_navigation`, `/nav_status` |
+
+> **Two navigation modes:**
+> - `navigator_node` (reactive, executable `navigator_node`, file `navigator.py`) — hand-coded go-to-goal + obstacle avoidance. No map needed. Used by `farm_twin.launch.py`.
+> - `nav2_navigator` (Nav2 Simple Commander, executable `nav2_navigator`, file `navigator_node.py`) — Nav2 plans the path. **Needs a SLAM map + Nav2 running.** Used by `navigation.launch.py` (lab) and `gazebo_nav2_demo.launch.py` (home). Adds auto return-home on low battery.
 
 ---
 
@@ -97,12 +101,14 @@ farm_twin_poc/
 │   ├── twin_safety_node.py    Node 2 — safety stop + state sync
 │   ├── zone_monitor_node.py   Node 3 — farm zone detection
 │   ├── dt_logger_node.py      Node 4 — Digital Entity logger
-│   └── navigator.py           Node 5 — autonomous navigation + obstacle avoidance
+│   ├── navigator.py           Node 5a — reactive navigation (no map needed)
+│   └── navigator_node.py      Node 5b — Nav2 navigation + return-home (needs map)
 ├── launch/
-│   ├── gazebo_twin.launch.py  Gazebo Digital Twin (lab_world.sdf)
-│   ├── farm_twin.launch.py    Nodes 2+3+4+5 (full system)
-│   ├── slam.launch.py         SLAM with Cartographer
-│   └── navigation.launch.py  Nav2 (optional)
+│   ├── gazebo_twin.launch.py     Gazebo Digital Twin (lab_world.sdf)
+│   ├── farm_twin.launch.py       Nodes 2+3+4+5a (reactive full system)
+│   ├── slam.launch.py            SLAM with Cartographer
+│   ├── gazebo_nav2_demo.launch.py  Nav2 autonomous demo at home (Gazebo)
+│   └── navigation.launch.py      Nav2 + nodes 3+4+5b on real robot (lab)
 ├── scripts/
 │   └── map_to_world.py        SLAM map → Gazebo SDF world
 └── worlds/
@@ -118,9 +124,10 @@ farm_twin_poc/
 - 🟢 **Green** = fertilize zones (NPK application)
 
 Coordinates are in the odom frame (metres from robot start position).
-Update in **both** files before lab session:
+Update in **all three** places before lab session:
 - `farm_twin_poc/zone_monitor_node.py` → `FARM_ZONES`
-- `farm_twin_poc/navigator.py` → `WAYPOINTS`
+- `farm_twin_poc/navigator.py` → `WAYPOINTS`  (reactive mode)
+- `farm_twin_poc/navigator_node.py` → `WAYPOINTS`  (Nav2 mode)
 
 ---
 
@@ -198,7 +205,7 @@ source install/setup.bash
 Verify:
 ```bash
 ros2 pkg executables farm_twin_poc
-# Expected: dt_logger_node, navigator_node, safety_stop_node, twin_safety_node, zone_monitor_node
+# Expected: dt_logger_node, nav2_navigator, navigator_node, safety_stop_node, twin_safety_node, zone_monitor_node
 ```
 
 > **Build error "failed to create symbolic link":**
@@ -266,6 +273,40 @@ ros2 service call /return_home std_srvs/srv/Trigger
 ```
 
 Return home automatically when battery is low (< 20% or < 11V) — no action needed, triggers automatically at lab with real robot.
+
+### Mode 3 — Nav2 autonomous navigation (planned path)
+
+Use this when you want **Nav2 to plan the path** to each zone instead of the
+reactive go-to-goal. Needs your SLAM map. Runs in the lab world (no `sim`
+namespace) so the TF tree is clean.
+
+**Single terminal — everything (Gazebo + Nav2 + nodes):**
+```bash
+ros2 launch farm_twin_poc gazebo_nav2_demo.launch.py map:=$HOME/map.yaml
+```
+
+Wait until the log shows **"Nav2 is active"**. By default this demo seeds the
+initial pose automatically (`set_initial_pose:=true`); if it didn't, click
+**"2D Pose Estimate"** in RViz at the robot spawn. Then:
+```bash
+ros2 service call /start_navigation std_srvs/srv/Trigger
+```
+
+Monitor / control (same services as the other modes):
+```bash
+ros2 topic echo /navigator/status    # state, current zone, battery, completed
+ros2 service call /nav_status      std_srvs/srv/Trigger
+ros2 service call /return_home     std_srvs/srv/Trigger   # go home now
+ros2 service call /stop_navigation std_srvs/srv/Trigger
+```
+
+> **Battery in Gazebo:** Gazebo TB3 usually does **not** publish
+> `/battery_state`, so auto return-home will not fire on its own. To test the
+> logic at home, fake a low battery while navigating:
+> ```bash
+> ros2 topic pub /battery_state sensor_msgs/msg/BatteryState "{percentage: 0.15}" --once
+> ```
+> The robot should cancel its goal and drive back to `home_x/home_y`.
 
 ---
 
@@ -411,6 +452,34 @@ ros2 service call /stop_navigation std_srvs/srv/Trigger
 
 ---
 
+## B5-bis. Nav2 autonomous navigation at lab (planned path)
+
+Tutor-recommended mode: zones are fixed and you already have a SLAM map, so
+let **Nav2 plan the path**. This replaces the reactive run above — do **not**
+run `farm_twin.launch.py` autonomous at the same time (they both publish
+motion). Robot bringup (B2) must be running, and you need `~/map.yaml` (B3).
+
+**Terminal — Nav2 + navigator + zone monitor + DT logger (one command):**
+```bash
+ros2 launch farm_twin_poc navigation.launch.py \
+    map:=~/map.yaml home_x:=0.0 home_y:=0.0
+```
+Replace `home_x/home_y` with the robot's REAL start coordinates in the lab room
+(the spot you want it to return to). Leave `set_initial_pose:=false` (default)
+on the real robot.
+
+In RViz, click **"2D Pose Estimate"** at the robot's actual position, wait for
+**"Nav2 is active"**, then:
+```bash
+ros2 service call /start_navigation std_srvs/srv/Trigger
+```
+
+The robot drives a Nav2-planned path to each zone; `zone_monitor` fires
+`/farm_action` and `dt_logger` logs each spray/fertilize. Auto return-home on
+low battery works for real here (real TB3 publishes `/battery_state`).
+
+---
+
 ## B6. Battery monitoring + Return home
 
 The robot automatically returns to its start position when battery is low
@@ -427,11 +496,18 @@ ros2 topic echo /navigator/status
 # Shows: state=... | battery=85% | returning=False | completed=[...]
 ```
 
-The home position is recorded automatically when the robot first publishes
-`/odom` — no hardcoded coordinates needed.
+The home position depends on which navigator you run:
+- **Reactive** (`navigator_node`, via `farm_twin.launch.py`): home is recorded
+  automatically when the robot first publishes `/odom` — no coordinates needed.
+- **Nav2** (`nav2_navigator`, via `navigation.launch.py`): home is set by the
+  `home_x` / `home_y` / `home_yaw` launch args. Set them to the robot's real
+  start pose, or it will return to the wrong spot.
 
 > **At home (Gazebo):** `/battery_state` may not publish → battery monitoring
-> inactive. Use `/return_home` service manually to test return behaviour.
+> inactive. Use `/return_home` manually, or fake a low battery to test:
+> ```bash
+> ros2 topic pub /battery_state sensor_msgs/msg/BatteryState "{percentage: 0.15}" --once
+> ```
 
 ---
 
@@ -490,9 +566,10 @@ Drive robot to each zone location, check tọa độ:
 ros2 topic echo /odom --once | grep -A3 "position"
 ```
 
-Update same coordinates in both files:
+Update same coordinates in all three places:
 - `farm_twin_poc/zone_monitor_node.py` → `FARM_ZONES`
-- `farm_twin_poc/navigator.py` → `WAYPOINTS`
+- `farm_twin_poc/navigator.py` → `WAYPOINTS`  (reactive)
+- `farm_twin_poc/navigator_node.py` → `WAYPOINTS`  (Nav2)
 
 Also update `<pose>` in `worlds/lab_world.sdf` for visual markers.
 
