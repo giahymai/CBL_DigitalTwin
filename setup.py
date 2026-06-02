@@ -18,6 +18,8 @@ setup(
             glob('worlds/*')),
         (os.path.join('share', package_name, 'maps'),
             glob('maps/*')),
+        (os.path.join('share', package_name, 'config'),
+            glob('config/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

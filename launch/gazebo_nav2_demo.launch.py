@@ -53,6 +53,7 @@ def generate_launch_description():
     x_pose       = LaunchConfiguration('x_pose')
     y_pose       = LaunchConfiguration('y_pose')
     headless     = LaunchConfiguration('headless')
+    nav2_params  = LaunchConfiguration('params_file')
 
     # headless:=true runs Gazebo as server only (-s), no 3D GUI window. On a
     # machine WITHOUT a real GPU (e.g. Docker-in-WSL, where /dev/dri is absent)
@@ -69,12 +70,19 @@ def generate_launch_description():
     # scripts/world_to_map.py. Matches the world 1:1 so the at-home demo runs
     # with no manual SLAM. Override with map:=... to use your own.
     default_map = os.path.join(pkg_share, 'maps', 'lab_map.yaml')
+    # Nav2 params tuned for a slow (GPU-less) simulator: the LiDAR renders late,
+    # so /scan and TF lag. This copy of turtlebot3's burger.yaml relaxes the
+    # collision_monitor scan source_timeout (0.2 -> 5.0 s) and TF tolerances so
+    # Nav2 doesn't keep stopping the robot for "invalid/stale source". The lab
+    # (navigation.launch.py) keeps the stock params — real robot, real time.
+    default_params = os.path.join(pkg_share, 'config', 'nav2_sim.yaml')
 
     launch_file_dir = os.path.join(pkg_tb3_gazebo, 'launch')
 
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='true'),
         DeclareLaunchArgument('map', default_value=default_map),
+        DeclareLaunchArgument('params_file', default_value=default_params),
         DeclareLaunchArgument('world', default_value=default_world),
         # Spawn at the WORLD ORIGIN (0,0). This makes odom == map == world: the
         # robot's /odom (origin = spawn) coincides with the map frame, so the
@@ -142,6 +150,7 @@ def generate_launch_description():
             launch_arguments={
                 'use_sim_time': use_sim_time,
                 'map':          map_yaml,
+                'params_file':  nav2_params,
             }.items(),
         ),
 
