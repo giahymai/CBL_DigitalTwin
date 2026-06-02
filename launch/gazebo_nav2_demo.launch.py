@@ -107,21 +107,14 @@ def generate_launch_description():
             launch_arguments={'x_pose': x_pose, 'y_pose': y_pose}.items(),
         ),
 
-        # 2b) Bridge the gz `tf` topic to ROS /tf. On gz_sim (Harmonic) the
-        # DiffDrive plugin publishes odom->base_footprint on a gz topic named
-        # `tf`; without this bridge the ROS TF tree is EMPTY (the exact cause
-        # of "Invalid frame ID 'odom'"). Also bridge /clock for sim time.
-        Node(
-            package='ros_gz_bridge',
-            executable='parameter_bridge',
-            name='gz_tf_bridge',
-            output='screen',
-            arguments=[
-                '/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V',
-                '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
-            ],
-            parameters=[{'use_sim_time': use_sim_time}],
-        ),
+        # 2b) NOTE: do NOT add a separate /tf + /clock bridge here.
+        # spawn_turtlebot3.launch.py (included above) already starts the TB3
+        # parameter_bridge from turtlebot3_burger_bridge.yaml, which bridges
+        # /clock, /tf, /odom, /scan, /cmd_vel, /imu and /joint_states. Adding a
+        # second bridge for /clock and /tf makes BOTH republish the same gz
+        # topics out of order -> "Detected jump back in time. Clearing TF
+        # buffer" floods, AMCL/costmap TF breaks and Nav2's controller freezes
+        # the robot. One bridge only.
 
         # 2c) robot_state_publisher: provides the STATIC part of the tree
         # (base_footprint -> base_link -> wheels/scan) from the TB3 URDF.
