@@ -177,7 +177,15 @@ def generate_launch_description():
             executable='zone_monitor_node',
             name='zone_monitor_node',
             output='screen',
-            parameters=[{'odom_topic': '/odom', 'use_sim_time': use_sim_time}],
+            # Nav2: detect zones in the MAP frame via TF. /odom drifts and AMCL
+            # corrects it, so the robot reaches a tile in map coords but /odom
+            # reports a different number -> zone detection on /odom never fires.
+            parameters=[{
+                'position_source': 'tf',
+                'global_frame':    'map',
+                'robot_frame':     'base_link',
+                'use_sim_time':    use_sim_time,
+            }],
         ),
         Node(
             package='farm_twin_poc',

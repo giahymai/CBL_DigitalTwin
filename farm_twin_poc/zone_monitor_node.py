@@ -28,6 +28,8 @@ from nav_msgs.msg import Odometry
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from geometry_msgs.msg import TwistStamped
+from tf2_ros import Buffer, TransformListener
+from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
 
 FARM_ZONES = [
     {'name': 'spray_zone_A',     'x':  0.5, 'y':  2.7, 'radius': 0.35, 'action': 'spray',
@@ -51,12 +53,36 @@ class ZoneMonitorNode(Node):
         self._in_zone     = {z['name']: False for z in FARM_ZONES}
         self._trigger_cnt = {z['name']: 0     for z in FARM_ZONES}
 
-        self.declare_parameter('odom_topic', '/sim/odom')
-        odom_topic = self.get_parameter('odom_topic').value
-        self.create_subscription(Odometry, odom_topic, self._odom_cb, 10)
-        self.get_logger().info(f'SUB odom: {odom_topic}')
+        # Position source. FARM_ZONES coords live in the same frame as the
+        # Gazebo zone tiles (the world/map frame).
+        #   'odom' — read /odom directly. Correct for reactive + teleop, where
+        #            there is no map/AMCL and /odom is anchored at spawn ≈ world.
+        #   'tf'   — look up <global_frame>-><robot_frame> (map->base_link).
+        #            REQUIRED under Nav2: /odom drifts and AMCL corrects it via a
+        #            map->odom transform, so /odom no longer matches the tiles.
+        #            The robot reaches the tile in the map frame but /odom reads
+        #            a different number, so zone detection on /odom never fires.
+        self.declare_parameter('position_source', 'odom')
+        self.declare_parameter('odom_topic',   '/sim/odom')
+        self.declare_parameter('global_frame', 'map')
+        self.declare_parameter('robot_frame',  'base_link')
+        self._source = self.get_parameter('position_source').value
+
         self._pub = self.create_publisher(String, '/farm_action', 10)
         self.create_service(Trigger, '/get_zone_status', self._status_srv)
+
+        if self._source == 'tf':
+            self._global_frame = self.get_parameter('global_frame').value
+            self._robot_frame  = self.get_parameter('robot_frame').value
+            self._tf_buffer    = Buffer()
+            self._tf_listener  = TransformListener(self._tf_buffer, self)
+            self.create_timer(0.1, self._tf_cb)
+            self.get_logger().info(
+                f'Position source: TF {self._global_frame} -> {self._robot_frame}')
+        else:
+            odom_topic = self.get_parameter('odom_topic').value
+            self.create_subscription(Odometry, odom_topic, self._odom_cb, 10)
+            self.get_logger().info(f'Position source: odom topic {odom_topic}')
 
         # Optional 360° spin on zone entry — for TELEOP demos ONLY. The two
         # navigator nodes already spin on arrival, so leave this False whenever a
@@ -83,7 +109,18 @@ class ZoneMonitorNode(Node):
             )
 
     def _odom_cb(self, msg):
-        self._x, self._y = msg.pose.pose.position.x, msg.pose.pose.position.y
+        self._update_position(msg.pose.pose.position.x, msg.pose.pose.position.y)
+
+    def _tf_cb(self):
+        try:
+            t = self._tf_buffer.lookup_transform(
+                self._global_frame, self._robot_frame, rclpy.time.Time())
+        except (LookupException, ConnectivityException, ExtrapolationException):
+            return  # transform not available yet — wait for the next tick
+        self._update_position(t.transform.translation.x, t.transform.translation.y)
+
+    def _update_position(self, x, y):
+        self._x, self._y = x, y
         self._odom_ok = True
         for zone in FARM_ZONES:
             dist = math.sqrt((self._x - zone['x'])**2 + (self._y - zone['y'])**2)

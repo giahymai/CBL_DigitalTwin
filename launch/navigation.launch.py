@@ -84,13 +84,20 @@ def generate_launch_description():
             }],
         ),
 
-        # 3) Zone monitor — fires /farm_action at each zone (real /odom).
+        # 3) Zone monitor — fires /farm_action at each zone. Detect in the MAP
+        # frame via TF: under Nav2 /odom drifts and AMCL corrects it, so the
+        # robot reaches a zone in map coords while /odom reads something else.
         Node(
             package='farm_twin_poc',
             executable='zone_monitor_node',
             name='zone_monitor_node',
             output='screen',
-            parameters=[{'odom_topic': '/odom', 'use_sim_time': use_sim_time}],
+            parameters=[{
+                'position_source': 'tf',
+                'global_frame':    'map',
+                'robot_frame':     'base_link',
+                'use_sim_time':    use_sim_time,
+            }],
         ),
 
         # 4) DT logger — Digital Entity. On the real robot there is no separate

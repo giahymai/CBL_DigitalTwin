@@ -657,6 +657,14 @@ git pull && colcon build --packages-select farm_twin_poc && source install/setup
 **Zone actions not triggering:** Drive within `radius` metres (default 0.35 m).
 Check `ros2 topic hz /odom`.
 
+**Zone actions not triggering under Nav2 (robot is visibly on the tile but
+`spray_actions` stays 0):** frame mismatch. `FARM_ZONES` and the tiles live in
+the **map** frame, but under Nav2 `/odom` drifts (AMCL corrects it via a
+`map->odom` transform), so the robot reaches the tile in map coords while
+`/odom` reads a different number. The Nav2 launches fix this by running
+`zone_monitor_node` with `position_source:=tf` (looks up `map->base_link`).
+Reactive/teleop keep `position_source:=odom` (no map, `/odom` ≈ world).
+
 **Robot stuck during navigation:** Automatic escape after 4s — wait or call `/stop_navigation`.
 
 **Robot not returning home:** Check `/odom` is publishing. Call `/nav_status` to see home position.
