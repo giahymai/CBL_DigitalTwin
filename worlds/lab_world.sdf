@@ -2386,17 +2386,18 @@
          A sphere at z=0.1 r=0.12 reaches up to 0.22 m and the LiDAR hits it, so
          the robot treats the zone as an obstacle and never reaches the centre to
          trigger /farm_action. A low tile is seen as free space -> robot drives
-         over it -> zone_monitor fires. Size 0.45x0.45 m is INSCRIBED in the
-         trigger circle (r=0.35, FARM_ZONES): every point of the tile is within
-         0.35 m of the centre, so /farm_action fires the instant the robot
-         touches the tile (no "drive deeper to the centre" lag). -->
+         over it -> zone_monitor fires. The marker is a flat DISC of radius
+         0.35 m, matching the trigger circle (r=0.35 in FARM_ZONES) exactly: the
+         robot triggers /farm_action precisely when it touches the disc, so the
+         visible zone and the detected zone line up (no firing outside the
+         marker, no "drive deeper to the centre" lag). -->
 
     <model name="spray_zone_A">
       <static>true</static>
       <pose>0.5 2.7 0.015 0 0 0</pose>
       <link name="link">
         <visual name="vis">
-          <geometry><box><size>0.45 0.45 0.02</size></box></geometry>
+          <geometry><cylinder><radius>0.35</radius><length>0.02</length></cylinder></geometry>
           <material>
             <ambient>0.9 0.1 0.1 1</ambient>
             <diffuse>0.9 0.1 0.1 1</diffuse>
@@ -2410,7 +2411,7 @@
       <pose>3.5 2.7 0.015 0 0 0</pose>
       <link name="link">
         <visual name="vis">
-          <geometry><box><size>0.45 0.45 0.02</size></box></geometry>
+          <geometry><cylinder><radius>0.35</radius><length>0.02</length></cylinder></geometry>
           <material>
             <ambient>0.1 0.8 0.1 1</ambient>
             <diffuse>0.1 0.8 0.1 1</diffuse>
@@ -2424,7 +2425,7 @@
       <pose>3.5 0.7 0.015 0 0 0</pose>
       <link name="link">
         <visual name="vis">
-          <geometry><box><size>0.45 0.45 0.02</size></box></geometry>
+          <geometry><cylinder><radius>0.35</radius><length>0.02</length></cylinder></geometry>
           <material>
             <ambient>0.9 0.1 0.1 1</ambient>
             <diffuse>0.9 0.1 0.1 1</diffuse>
@@ -2438,7 +2439,7 @@
       <pose>0.5 0.7 0.015 0 0 0</pose>
       <link name="link">
         <visual name="vis">
-          <geometry><box><size>0.45 0.45 0.02</size></box></geometry>
+          <geometry><cylinder><radius>0.35</radius><length>0.02</length></cylinder></geometry>
           <material>
             <ambient>0.1 0.8 0.1 1</ambient>
             <diffuse>0.1 0.8 0.1 1</diffuse>

@@ -113,6 +113,7 @@ class NavigatorNode(Node):
         # ---- state ----
         self._x = self._y = self._yaw = 0.0
         self._battery_pct = 100.0
+        self._battery_seen = False      # ignore battery until a plausible (>0) reading
         self._state   = 'idle'          # idle | navigating | returning_home
         self._current: Optional[str] = None
         self._completed: list = []
@@ -160,10 +161,17 @@ class NavigatorNode(Node):
         # BatteryState.percentage is 0..1 on real TB3; some sources give 0..100.
         pct = msg.percentage
         if pct is not None and not math.isnan(pct):
-            self._battery_pct = pct * 100.0 if pct <= 1.0 else pct
+            val = pct * 100.0 if pct <= 1.0 else pct
+            self._battery_pct = val
+            # In Gazebo a battery topic often publishes 0 (uninitialised). Treat
+            # only a >0 reading as real, so a spurious 0% can't trigger a bogus
+            # return-home that aborts the zone tour after the first goal.
+            if val > 0.0:
+                self._battery_seen = True
 
     def _battery_watch(self):
-        if self._state == 'navigating' and self._battery_pct < self._low_thresh:
+        if (self._battery_seen and self._state == 'navigating'
+                and self._battery_pct < self._low_thresh):
             self.get_logger().warn(
                 f'[BATTERY] {self._battery_pct:.0f}% < {self._low_thresh:.0f}% '
                 f'-> aborting zones, returning home')
@@ -232,7 +240,10 @@ class NavigatorNode(Node):
             # inside isTaskComplete(). Spinning the same global executor from two
             # threads is explicitly forbidden by rclpy and corrupts the wait set.
             time.sleep(0.1)
-        return self._nav.getResult() == TaskResult.SUCCEEDED
+        result = self._nav.getResult()
+        if result != TaskResult.SUCCEEDED:
+            self.get_logger().warn(f'[NAV] goal ended with result={result}')
+        return result == TaskResult.SUCCEEDED
 
     def _run_all(self):
         if not self._busy.acquire(blocking=False):
