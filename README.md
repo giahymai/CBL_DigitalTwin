@@ -49,8 +49,14 @@ ros2 service call /get_dt_status   std_srvs/srv/Trigger
 
 > **Use `--full-length`** on `ros2 topic echo /dt/status`. Without it, ros2 cuts
 > the JSON off with `...` after the first ~100 chars, so fields like
-> `fertilize_actions` / `spray_actions` get hidden. Or just call
-> `ros2 service call /get_dt_status std_srvs/srv/Trigger` for the full pretty JSON.
+> `fertilize_actions` / `spray_actions` get hidden.
+>
+> Two services give the same data without the truncation:
+> ```bash
+> ros2 service call /get_dt_status std_srvs/srv/Trigger   # summary now (counts, last_action)
+> ros2 service call /get_dt_log    std_srvs/srv/Trigger   # FULL history — every spray/fertilize event + timestamp
+> ```
+> `/get_dt_status` = current snapshot; `/get_dt_log` = the whole action history.
 
 ### ③ Object/Environment Interaction
 **A. Safety stop:** LiDAR detects obstacle < 0.25 m → robot stops automatically.
