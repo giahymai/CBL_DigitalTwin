@@ -62,6 +62,9 @@ from geometry_msgs.msg import PoseStamped, Quaternion, TwistStamped
 
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 
+from tf2_ros import Buffer, TransformListener
+from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
+
 # Aligned with FARM_ZONES in zone_monitor_node.py. yaw is the heading the robot
 # should face on arrival (radians); it does not affect zone detection.
 WAYPOINTS = [
@@ -101,15 +104,27 @@ class NavigatorNode(Node):
         # inflation layer (zones sit close to walls).
         self.declare_parameter('spin_speed',     0.6)        # rad/s
         self.declare_parameter('spin_cmd_topic', '/cmd_vel')
+        # Treat a goal as reached once the robot is within arrival_radius (map
+        # frame) of it, instead of waiting for Nav2 to converge to its own
+        # 0.25 m goal tolerance. On a slow/headless sim the controller keeps
+        # replanning and never quite closes the gap, so the tour would hang on
+        # zone 1 forever. arrival_radius == the zone trigger radius, so "arrived"
+        # coincides with zone_monitor firing /farm_action.
+        self.declare_parameter('arrival_radius', 0.35)
+        self.declare_parameter('global_frame',   'map')
+        self.declare_parameter('robot_frame',    'base_link')
 
         gp = self.get_parameter
-        self._odom_topic    = gp('odom_topic').value
-        self._battery_topic = gp('battery_topic').value
-        self._low_thresh    = float(gp('return_battery_percent').value)
-        self._home_x        = float(gp('home_x').value)
-        self._home_y        = float(gp('home_y').value)
-        self._home_yaw      = float(gp('home_yaw').value)
-        self._spin_speed    = float(gp('spin_speed').value)
+        self._odom_topic     = gp('odom_topic').value
+        self._battery_topic  = gp('battery_topic').value
+        self._low_thresh     = float(gp('return_battery_percent').value)
+        self._home_x         = float(gp('home_x').value)
+        self._home_y         = float(gp('home_y').value)
+        self._home_yaw       = float(gp('home_yaw').value)
+        self._spin_speed     = float(gp('spin_speed').value)
+        self._arrival_radius = float(gp('arrival_radius').value)
+        self._global_frame   = gp('global_frame').value
+        self._robot_frame    = gp('robot_frame').value
 
         # ---- state ----
         self._x = self._y = self._yaw = 0.0
@@ -123,6 +138,10 @@ class NavigatorNode(Node):
 
         # ---- Nav2 ----
         self._nav = BasicNavigator()
+
+        # TF, to read the robot pose in the map frame (for arrival_radius).
+        self._tf_buffer   = Buffer()
+        self._tf_listener = TransformListener(self._tf_buffer, self)
 
         # ---- ROS I/O ----
         self.create_subscription(Odometry,     self._odom_topic,    self._odom_cb,    10)
@@ -224,14 +243,31 @@ class NavigatorNode(Node):
         p.pose.orientation = yaw_to_quat(yaw)
         return p
 
+    def _map_xy(self):
+        """Robot (x, y) in the map frame via TF, or None if not available yet."""
+        try:
+            t = self._tf_buffer.lookup_transform(
+                self._global_frame, self._robot_frame, rclpy.time.Time())
+            return t.transform.translation.x, t.transform.translation.y
+        except (LookupException, ConnectivityException, ExtrapolationException):
+            return None
+
     def _drive_to(self, x: float, y: float, yaw: float = 0.0, timeout_s: float = 120.0) -> bool:
-        """Send one NavigateToPose goal and block until done/cancel/timeout."""
+        """Send one NavigateToPose goal and block until done/cancel/timeout.
+        Also exit early (success) once within arrival_radius of the goal, so a
+        slow sim that can't converge to Nav2's tight goal tolerance still lets
+        the tour move on."""
         self._nav.goToPose(self._make_pose(x, y, yaw))
         start = self.get_clock().now()
         while not self._nav.isTaskComplete():
             if self._cancel_requested:
                 self._nav.cancelTask()
                 return False
+            pos = self._map_xy()
+            if pos is not None and math.hypot(x - pos[0], y - pos[1]) <= self._arrival_radius:
+                self.get_logger().info('[NAV] within arrival_radius — good enough, moving on')
+                self._nav.cancelTask()
+                return True
             if (self.get_clock().now() - start) > Duration(seconds=timeout_s):
                 self.get_logger().warn('[NAV] goal timeout — cancelling')
                 self._nav.cancelTask()
