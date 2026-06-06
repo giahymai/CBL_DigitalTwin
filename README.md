@@ -133,17 +133,19 @@ farm_twin_poc/
 
 ## Farm Zones
 
-4 predefined zones marked as **flat colored floor tiles** (0.45 × 0.45 m) in Gazebo:
-- 🔴 **Red** = spray zones (Striga herbicide)
-- 🟢 **Green** = fertilize zones (NPK application)
+4 predefined zones marked as **flat colored discs** (radius 0.35 m) in Gazebo.
+Spray (red) zones are on the bottom row (near the robot start) and fertilize
+(green) on the top row, so the tour does all sprays first, then fertilizes:
+- 🔴 **Red** = spray zones (Striga herbicide) — visited first
+- 🟢 **Green** = fertilize zones (NPK application) — visited second
 
-> Tiles are deliberately flat (~2 cm tall) and visual-only. An earlier version
+> Discs are deliberately flat (~2 cm tall) and visual-only. An earlier version
 > used raised spheres, but in gz-sim the LiDAR raytraces against **visual**
 > geometry, so a sphere reaching up to the LiDAR plane (~0.18 m) was seen as an
 > obstacle — the robot stopped short and never reached the centre to trigger an
-> action. A low tile sits under the LiDAR beam, so the robot drives over it and
-> `zone_monitor_node` fires `/farm_action`. The tile is inscribed in the 0.35 m
-> trigger circle, so the action logs the instant the robot touches the tile.
+> action. A low disc sits under the LiDAR beam, so the robot drives over it and
+> `zone_monitor_node` fires `/farm_action`. The disc radius equals the 0.35 m
+> trigger radius, so the visible zone and the detected zone line up exactly.
 > When the robot reaches a zone it **spins 360° in place** to signal the
 > spray/fertilize action (visible in Gazebo + RViz).
 
@@ -387,9 +389,53 @@ git push
 
 # PART B — LAB SESSION
 
-**Linux native — no Docker, no WSL.**
-**Workspace: `~/turtlebot3_ws`**
-**ROS_DOMAIN_ID = last number of robot IP** (e.g. 192.168.8.40 → 40)
+**Linux native — no Docker, no WSL. Workspace: `~/turtlebot3_ws`.**
+
+## 🔑 LAB SETUP BLOCK — run this FIRST in EVERY new laptop terminal
+
+Every new terminal **on the laptop** is empty: it knows no `ros2`, no package,
+no robot. Paste this block **before any other command**. Nothing in B3–B8 works
+without it.
+
+```bash
+cd ~/turtlebot3_ws
+source /opt/ros/jazzy/setup.bash
+source /opt/turtlebot3_ws/install/setup.bash
+source install/setup.bash
+export TURTLEBOT3_MODEL=burger
+export ROS_DOMAIN_ID=<ROBOT_ID>     # last number of the robot's IP, e.g. 192.168.8.40 → 40
+```
+
+> - `<ROBOT_ID>` must be the **same in every terminal** and match the robot.
+> - Quick check it worked: `ros2 topic list` shows `/scan`. If not → wrong/missing
+>   `ROS_DOMAIN_ID`, or robot bringup (B2) isn't running.
+> - **The SSH terminal (B2) is the exception** — it runs *on the robot*, not the
+>   laptop, so it uses the robot's own setup shown there, not this block.
+
+Below, each laptop terminal says **"SETUP BLOCK, then:"** — that means run the
+block above first, then the command shown.
+
+---
+
+## B0. Will it work at the lab? Pre-lab checklist
+
+The real robot runs in real time (no Gazebo, no sim-clock stutter), and
+`navigation.launch.py` uses the **stock** Nav2 params, so the at-home sim tuning
+does not affect the lab. The logic is the same code. But these MUST be done or
+the run will fail:
+
+- [ ] **Built & sourced** on the lab laptop (B1), `ros2 pkg executables farm_twin_poc` lists all nodes.
+- [ ] **Robot bringup running** (B2) and `ros2 topic hz /scan` ≈ 10 Hz from the laptop.
+- [ ] **A real SLAM map** `~/map.yaml` of the actual room (B3).
+- [ ] **Zone coordinates set to the real room** in `FARM_ZONES` + both `WAYPOINTS` (B9),
+      and `home_x/home_y` to the real start pose. The shipped coords are for the
+      sim world and will be meaningless in the real room.
+- [ ] **AMCL localized**: in RViz, "2D Pose Estimate" at the robot's true spot.
+- [ ] **Test the spin early**: the 360° spin publishes straight to `/cmd_vel`. The
+      lab's stock Nav2 runs `collision_monitor`, which may dampen it. If the spin
+      is weak, raise `spin_speed` (param) or tell us to route the spin differently.
+
+> Same `ROS_DOMAIN_ID` in every laptop terminal, matching the robot's IP.
 
 ---
 
@@ -412,76 +458,67 @@ source install/setup.bash
 
 ## B2. Connect to robot
 
-**Terminal 1 — SSH:**
+**Terminal 1 — SSH into the robot** (this terminal runs ON the robot, so it uses
+the robot's own setup, NOT the laptop SETUP BLOCK):
 ```bash
 ssh turtlebot@<ROBOT_IP>
-```
-Inside robot:
-```bash
+# then, inside the robot:
 source /opt/ros/jazzy/setup.bash
 export TURTLEBOT3_MODEL=burger
 export LDS_MODEL=LDS-02
 ros2 launch turtlebot3_bringup robot.launch.py
 ```
 
-Verify from laptop:
+**Terminal 2 — Verify from the laptop** — SETUP BLOCK, then:
 ```bash
-export ROS_DOMAIN_ID=<ROBOT_ID>
-ros2 topic hz /scan    # must show ~10 Hz
+ros2 topic hz /scan    # must show ~10 Hz → robot + ROS_DOMAIN_ID are correct
 ```
 
 ---
 
 ## B3. Run SLAM to map the lab room
 
-**Terminal 2 — Cartographer:**
+**Terminal 2 — Cartographer** — SETUP BLOCK, then:
 ```bash
-source /opt/ros/jazzy/setup.bash && source /opt/turtlebot3_ws/install/setup.bash
-source ~/turtlebot3_ws/install/setup.bash
-export TURTLEBOT3_MODEL=burger && export ROS_DOMAIN_ID=<ROBOT_ID>
 ros2 launch farm_twin_poc slam.launch.py
 ```
 
-**Terminal 3 — Drive robot around room:**
+**Terminal 3 — Drive robot around room** — SETUP BLOCK, then:
 ```bash
-export ROS_DOMAIN_ID=<ROBOT_ID>
 ros2 run turtlebot3_teleop teleop_keyboard
 ```
 
-**Terminal 4 — Save map:**
+**Terminal 4 — Save map** — SETUP BLOCK, then:
 ```bash
-source /opt/ros/jazzy/setup.bash
-export ROS_DOMAIN_ID=<ROBOT_ID>
-ros2 run nav2_map_server map_saver_cli -f ~/map \
-    --ros-args -p map_topic:=/map
+ros2 run nav2_map_server map_saver_cli -f ~/map --ros-args -p map_topic:=/map
 ```
 
 ---
 
 ## B4. Run the full Digital Twin
 
-Open **5 terminals** (each needs full source block + `ROS_DOMAIN_ID`).
+Open **5 terminals**. Terminal 1 is the SSH/robot one from B2; terminals 2–5 are
+laptop terminals → **SETUP BLOCK first in each**.
 
-**Terminal 1 — Robot bringup** (already running from B2).
+**Terminal 1 — Robot bringup** (already running from B2, on the robot).
 
-**Terminal 2 — Gazebo twin:**
+**Terminal 2 — Gazebo twin** — SETUP BLOCK, then:
 ```bash
 ros2 launch farm_twin_poc gazebo_twin.launch.py
 ```
 
-**Terminal 3 — Farm Twin system:**
+**Terminal 3 — Farm Twin system** — SETUP BLOCK, then:
 ```bash
 ros2 launch farm_twin_poc farm_twin.launch.py lab:=true
-# lab:=true switches all topics to real robot: /scan, /odom
+# lab:=true switches all topics to the real robot: /scan, /odom
 ```
 
-**Terminal 4 — Teleop (manual mode):**
+**Terminal 4 — Teleop (manual mode)** — SETUP BLOCK, then:
 ```bash
-ros2 run turtlebot3_teleop teleop_keyboard \
-    --ros-args -r /cmd_vel:=/cmd_vel_raw
+ros2 run turtlebot3_teleop teleop_keyboard --ros-args -r /cmd_vel:=/cmd_vel_raw
 ```
 
-**Terminal 5 — Monitor:**
+**Terminal 5 — Monitor** — SETUP BLOCK, then:
 ```bash
 ros2 topic echo /sim/cmd_vel
 ```
@@ -490,14 +527,15 @@ ros2 topic echo /sim/cmd_vel
 
 ## B5. Autonomous navigation at lab
 
-After B4 is running:
+After B4 is running, in a new laptop terminal — SETUP BLOCK, then:
 
 ```bash
 ros2 service call /start_navigation std_srvs/srv/Trigger
 ```
 
-Robot drives autonomously to each farm zone, avoids obstacles, and spins 360° at
-each zone. Zone actions logged by Digital Entity automatically.
+Robot drives autonomously to each farm zone (spray/red zones first, then
+fertilize/green), avoids obstacles, and spins 360° at each zone. Zone actions
+logged by Digital Entity automatically.
 
 Monitor:
 ```bash
@@ -520,7 +558,13 @@ let **Nav2 plan the path**. This replaces the reactive run above — do **not**
 run `farm_twin.launch.py` autonomous at the same time (they both publish
 motion). Robot bringup (B2) must be running, and you need `~/map.yaml` (B3).
 
-**Terminal — Nav2 + navigator + zone monitor + DT logger (one command):**
+> ⚠️ **Set the zone coordinates to the REAL room first.** The `WAYPOINTS` /
+> `FARM_ZONES` shipped in the code are for the Gazebo world. In the real lab the
+> map frame comes from YOUR SLAM map and start pose, so update zone coords (B9)
+> and `home_x/home_y` to the real room, or the robot will drive to meaningless
+> points. Do this **before** launching.
+
+**Terminal — Nav2 + navigator + zone monitor + DT logger** — SETUP BLOCK, then:
 ```bash
 ros2 launch farm_twin_poc navigation.launch.py \
     map:=~/map.yaml home_x:=0.0 home_y:=0.0
@@ -530,7 +574,7 @@ Replace `home_x/home_y` with the robot's REAL start coordinates in the lab room
 on the real robot.
 
 In RViz, click **"2D Pose Estimate"** at the robot's actual position, wait for
-**"Nav2 is active"**, then:
+**"Nav2 is active"**, then — in a new laptop terminal (SETUP BLOCK first):
 ```bash
 ros2 service call /start_navigation std_srvs/srv/Trigger
 ```
