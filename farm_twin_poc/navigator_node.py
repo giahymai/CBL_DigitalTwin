@@ -52,6 +52,7 @@ from typing import Optional
 import rclpy
 from rclpy.node import Node
 from rclpy.duration import Duration
+from rclpy.executors import SingleThreadedExecutor
 
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import BatteryState
@@ -235,10 +236,10 @@ class NavigatorNode(Node):
                 self.get_logger().warn('[NAV] goal timeout — cancelling')
                 self._nav.cancelTask()
                 return False
-            # NOTE: do NOT rclpy.spin_once(self) here. main() already spins this
-            # node via rclpy.spin(node), and BasicNavigator spins its own node
-            # inside isTaskComplete(). Spinning the same global executor from two
-            # threads is explicitly forbidden by rclpy and corrupts the wait set.
+            # NOTE: do NOT spin our node here. main() spins it on its own
+            # dedicated executor, and isTaskComplete() spins the Nav2 node on the
+            # GLOBAL executor. Keeping the two executors separate is what avoids
+            # the "Executor is already spinning" clash (see main()).
             time.sleep(0.1)
         result = self._nav.getResult()
         if result != TaskResult.SUCCEEDED:
@@ -319,13 +320,6 @@ class NavigatorNode(Node):
     def _wrap(a):
         return math.atan2(math.sin(a), math.cos(a))
 
-    def _dwell(self, seconds: float):
-        # Wall-clock dwell so zone_monitor_node has time to fire /farm_action.
-        # Callbacks keep flowing via the main rclpy.spin(node); see _drive_to note.
-        end = self.get_clock().now() + Duration(seconds=seconds)
-        while self.get_clock().now() < end and not self._cancel_requested:
-            time.sleep(0.1)
-
     # ---------------- status ----------------
     def _broadcast(self):
         msg = String()
@@ -337,11 +331,21 @@ class NavigatorNode(Node):
 def main():
     rclpy.init()
     node = NavigatorNode()
+    # Spin our node on a DEDICATED executor, NOT the global one. nav2_simple_
+    # commander's goToPose()/isTaskComplete() internally call
+    # rclpy.spin_until_future_complete(...), which spins the GLOBAL executor. If
+    # main() also did rclpy.spin(node) (the global executor), the two clash with
+    # "RuntimeError: Executor is already spinning" and the navigation thread dies
+    # right after sending the first goal — so only one zone is ever visited.
+    # Giving our node its own executor leaves the global one free for Nav2.
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 
