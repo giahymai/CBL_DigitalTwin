@@ -175,7 +175,7 @@ local_costmap:
       plugins: ["obstacle_layer", "voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        inflation_radius: 0.5
+        inflation_radius: 0.25
         cost_scaling_factor: 5.0
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -263,7 +263,7 @@ global_costmap:
         transform_tolerance: 1.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        inflation_radius: 0.5
+        inflation_radius: 0.25
         cost_scaling_factor: 5.0
       always_send_full_costmap: true
 
@@ -347,7 +347,7 @@ collision_monitor:
       min_points: 4
       visualize: true
       polygon_pub_topic: "polygon_stop"
-      enabled: true
+      enabled: false   # sim demo: let the robot move; costmap already avoids walls
     PolygonSlow:
       type: "polygon"
       points: "[[0.1, 0.1], [0.1, -0.1], [-0.1, -0.1], [-0.1, 0.1]]"
@@ -356,7 +356,7 @@ collision_monitor:
       slowdown_ratio: 0.3
       visualize: true
       polygon_pub_topic: "polygon_slowdown"
-      enabled: true
+      enabled: false   # sim demo: don't throttle near walls
     PolygonLimit:
       type: "polygon"
       points: "[[0.1, 0.1], [0.1, -0.1], [-0.1, -0.1], [-0.1, 0.1]]"
@@ -375,7 +375,8 @@ collision_monitor:
       simulation_time_step: 0.02
       min_points: 6
       visualize: False
-      enabled: true
+      enabled: false   # sim demo: was stopping the robot ("approach away from
+                       # collision") near walls/zones and freezing the tour
     VelocityPolygonStop:
       type: "velocity_polygon"
       action_type: "stop"
