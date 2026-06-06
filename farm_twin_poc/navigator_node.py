@@ -67,11 +67,15 @@ from tf2_ros import LookupException, ConnectivityException, ExtrapolationExcepti
 
 # Aligned with FARM_ZONES in zone_monitor_node.py. yaw is the heading the robot
 # should face on arrival (radians); it does not affect zone detection.
+# Spray (red) zones first, then fertilize (green). Sprays sit on the bottom row
+# (y=0.7, near spawn) and fertilizes on the top row (y=2.7), so the robot does
+# all sprays before driving up to the greens — and never crosses a green on the
+# way to the first red.
 WAYPOINTS = [
-    {'name': 'spray_zone_A',     'x': 0.5, 'y': 2.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
-    {'name': 'fertilize_zone_B', 'x': 3.5, 'y': 2.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
+    {'name': 'spray_zone_A',     'x': 0.5, 'y': 0.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
     {'name': 'spray_zone_C',     'x': 3.5, 'y': 0.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
-    {'name': 'fertilize_zone_D', 'x': 0.5, 'y': 0.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
+    {'name': 'fertilize_zone_B', 'x': 3.5, 'y': 2.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
+    {'name': 'fertilize_zone_D', 'x': 0.5, 'y': 2.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
 ]
 
 
@@ -102,7 +106,7 @@ class NavigatorNode(Node):
         # commanding /cmd_vel (yaw-tracked) rather than Nav2's spin behaviour,
         # which aborts near walls when its collision look-ahead trips on the
         # inflation layer (zones sit close to walls).
-        self.declare_parameter('spin_speed',     0.6)        # rad/s
+        self.declare_parameter('spin_speed',     1.2)        # rad/s (faster spray/fertilize spin)
         self.declare_parameter('spin_cmd_topic', '/cmd_vel')
         # Arrival handling (map frame). We let Nav2 drive the robot close to the
         # zone CENTRE rather than bailing out the moment we touch the trigger

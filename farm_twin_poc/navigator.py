@@ -26,11 +26,12 @@ from nav_msgs.msg import Odometry
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
+# Spray (red, bottom row y=0.7) first, then fertilize (green, top row y=2.7).
 WAYPOINTS = [
-    {'name': 'spray_zone_A',     'x':  0.5, 'y':  2.7, 'action': 'spray',     'pause_s': 2.0},
+    {'name': 'spray_zone_A',     'x':  0.5, 'y':  0.7, 'action': 'spray',     'pause_s': 2.0},
+    {'name': 'spray_zone_C',     'x':  3.5, 'y':  0.7, 'action': 'spray',     'pause_s': 2.0},
     {'name': 'fertilize_zone_B', 'x':  3.5, 'y':  2.7, 'action': 'fertilize', 'pause_s': 2.0},
-    {'name': 'spray_zone_C',     'x':  3.5, 'y': 0.7, 'action': 'spray',     'pause_s': 2.0},
-    {'name': 'fertilize_zone_D', 'x':  0.5, 'y': 0.7, 'action': 'fertilize', 'pause_s': 2.0},
+    {'name': 'fertilize_zone_D', 'x':  0.5, 'y':  2.7, 'action': 'fertilize', 'pause_s': 2.0},
 ]
 
 # Battery threshold — return home below this percentage
