@@ -41,11 +41,16 @@ ros2 topic echo /cmd_vel --once  # DE → PE
 
 ```bash
 ros2 topic echo /sim/cmd_vel     # same values as /cmd_vel → motion sync
-ros2 topic echo /dt/status       # shows real_position, sim_position, sync_error_m
+ros2 topic echo /dt/status --full-length   # real/sim_position, sync_error_m, action counts
 ros2 service call /get_twin_status std_srvs/srv/Trigger
 ros2 service call /get_dt_status   std_srvs/srv/Trigger
 # sync_error_m close to 0 → strong State Synchronisation evidence
 ```
+
+> **Use `--full-length`** on `ros2 topic echo /dt/status`. Without it, ros2 cuts
+> the JSON off with `...` after the first ~100 chars, so fields like
+> `fertilize_actions` / `spray_actions` get hidden. Or just call
+> `ros2 service call /get_dt_status std_srvs/srv/Trigger` for the full pretty JSON.
 
 ### ③ Object/Environment Interaction
 **A. Safety stop:** LiDAR detects obstacle < 0.25 m → robot stops automatically.
@@ -591,7 +596,7 @@ ros2 service call /get_dt_log std_srvs/srv/Trigger
 
 ```bash
 ros2 topic echo /farm_action
-ros2 topic echo /dt/status
+ros2 topic echo /dt/status --full-length   # --full-length or the counts get cut by "..."
 ros2 topic echo /sim/cmd_vel
 ros2 topic echo /navigator/status
 ros2 node list
