@@ -163,7 +163,10 @@ def generate_launch_description():
             parameters=[{
                 'odom_topic':       '/odom',
                 'battery_topic':    '/battery_state',
-                'set_initial_pose': True,    # seed AMCL at home pose below
+                # AMCL self-seeds at (0,0) via nav2_sim.yaml (set_initial_pose),
+                # so the navigator does not need to re-seed (that retry loop
+                # spammed "Setting initial pose" + transform-timeout warnings).
+                'set_initial_pose': False,
                 'home_x':           0.0,     # = spawn; return_home comes back here
                 'home_y':           0.0,
                 'home_yaw':         0.0,
