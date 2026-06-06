@@ -57,7 +57,7 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
-from geometry_msgs.msg import PoseStamped, Quaternion
+from geometry_msgs.msg import PoseStamped, Quaternion, TwistStamped
 
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 
@@ -94,6 +94,12 @@ class NavigatorNode(Node):
         self.declare_parameter('home_x',   3.0)
         self.declare_parameter('home_y',   3.0)
         self.declare_parameter('home_yaw', 0.0)
+        # Spray/fertilize signal: rotate in place at each zone. Done by directly
+        # commanding /cmd_vel (yaw-tracked) rather than Nav2's spin behaviour,
+        # which aborts near walls when its collision look-ahead trips on the
+        # inflation layer (zones sit close to walls).
+        self.declare_parameter('spin_speed',     0.6)        # rad/s
+        self.declare_parameter('spin_cmd_topic', '/cmd_vel')
 
         gp = self.get_parameter
         self._odom_topic    = gp('odom_topic').value
@@ -102,9 +108,10 @@ class NavigatorNode(Node):
         self._home_x        = float(gp('home_x').value)
         self._home_y        = float(gp('home_y').value)
         self._home_yaw      = float(gp('home_yaw').value)
+        self._spin_speed    = float(gp('spin_speed').value)
 
         # ---- state ----
-        self._x = self._y = 0.0
+        self._x = self._y = self._yaw = 0.0
         self._battery_pct = 100.0
         self._state   = 'idle'          # idle | navigating | returning_home
         self._current: Optional[str] = None
@@ -119,6 +126,8 @@ class NavigatorNode(Node):
         self.create_subscription(Odometry,     self._odom_topic,    self._odom_cb,    10)
         self.create_subscription(BatteryState, self._battery_topic, self._battery_cb, 10)
         self._status_pub = self.create_publisher(String, '/navigator/status', 10)
+        self._cmd_pub    = self.create_publisher(
+            TwistStamped, gp('spin_cmd_topic').value, 10)
         self.create_service(Trigger, '/start_navigation', self._start_srv)
         self.create_service(Trigger, '/return_home',      self._return_home_srv)
         self.create_service(Trigger, '/stop_navigation',  self._stop_srv)
@@ -143,6 +152,9 @@ class NavigatorNode(Node):
     def _odom_cb(self, msg):
         self._x = msg.pose.pose.position.x
         self._y = msg.pose.pose.position.y
+        q = msg.pose.pose.orientation
+        self._yaw = math.atan2(2 * (q.w * q.z + q.x * q.y),
+                               1 - 2 * (q.y * q.y + q.z * q.z))
 
     def _battery_cb(self, msg: BatteryState):
         # BatteryState.percentage is 0..1 on real TB3; some sources give 0..100.
@@ -261,17 +273,40 @@ class NavigatorNode(Node):
             self._current = None
             self._state = 'idle'
 
-    def _spin_action(self, dist: float = 2 * math.pi):
-        """Spin ~360° in place via Nav2's spin behaviour to signal the
-        spray/fertilize action. Blocks until the spin finishes (also keeps the
-        robot on the zone long enough for zone_monitor_node to fire
-        /farm_action). Respects /stop_navigation and /return_home cancels."""
-        self._nav.spin(spin_dist=dist, time_allowance=25)
-        while not self._nav.isTaskComplete():
-            if self._cancel_requested:
-                self._nav.cancelTask()
-                return
-            time.sleep(0.1)
+    def _spin_action(self, revolutions: float = 1.0):
+        """Rotate ~360° in place to signal the spray/fertilize action.
+
+        Commands a steady angular velocity straight to /cmd_vel and tracks odom
+        yaw until a full turn completes, so it ALWAYS spins. (Nav2's own spin
+        behaviour was unreliable here: its collision look-ahead aborts near
+        walls, where the inflation layer flags the cell, so zones close to a
+        wall never spun.) linear.x stays 0 and the Nav2 goal is already complete,
+        so nothing else is driving the robot. Also keeps the robot on the zone
+        long enough for zone_monitor_node to fire /farm_action."""
+        target      = revolutions * 2.0 * math.pi
+        accumulated = 0.0
+        last_yaw    = self._yaw
+        t0          = time.monotonic()
+        while accumulated < target and not self._cancel_requested:
+            if time.monotonic() - t0 > 25.0:          # safety timeout
+                self.get_logger().warn('[SPIN] timeout')
+                break
+            accumulated += abs(self._wrap(self._yaw - last_yaw))
+            last_yaw     = self._yaw
+            cmd = TwistStamped()
+            cmd.header.stamp    = self.get_clock().now().to_msg()
+            cmd.header.frame_id = 'base_link'
+            cmd.twist.angular.z = self._spin_speed
+            self._cmd_pub.publish(cmd)
+            time.sleep(0.05)
+        stop = TwistStamped()
+        stop.header.stamp    = self.get_clock().now().to_msg()
+        stop.header.frame_id = 'base_link'
+        self._cmd_pub.publish(stop)
+
+    @staticmethod
+    def _wrap(a):
+        return math.atan2(math.sin(a), math.cos(a))
 
     def _dwell(self, seconds: float):
         # Wall-clock dwell so zone_monitor_node has time to fire /farm_action.
