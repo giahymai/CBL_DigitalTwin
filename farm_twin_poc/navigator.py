@@ -27,7 +27,7 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 WAYPOINTS = [
-    {'name': 'spray_zone_A',     'x':  0.5, 'y':  2.7, 'action': 'spray',     'pause_s': 2.0},
+    {'name': 'spray_zone_A',     'x':  0.5, 'y':  2.4, 'action': 'spray',     'pause_s': 2.0},
     {'name': 'fertilize_zone_B', 'x':  3.5, 'y':  2.7, 'action': 'fertilize', 'pause_s': 2.0},
     {'name': 'spray_zone_C',     'x':  3.5, 'y': 0.7, 'action': 'spray',     'pause_s': 2.0},
     {'name': 'fertilize_zone_D', 'x':  0.5, 'y': 0.7, 'action': 'fertilize', 'pause_s': 2.0},

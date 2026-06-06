@@ -68,7 +68,7 @@ from tf2_ros import LookupException, ConnectivityException, ExtrapolationExcepti
 # Aligned with FARM_ZONES in zone_monitor_node.py. yaw is the heading the robot
 # should face on arrival (radians); it does not affect zone detection.
 WAYPOINTS = [
-    {'name': 'spray_zone_A',     'x': 0.5, 'y': 2.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
+    {'name': 'spray_zone_A',     'x': 0.5, 'y': 2.4, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
     {'name': 'fertilize_zone_B', 'x': 3.5, 'y': 2.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
     {'name': 'spray_zone_C',     'x': 3.5, 'y': 0.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
     {'name': 'fertilize_zone_D', 'x': 0.5, 'y': 0.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},

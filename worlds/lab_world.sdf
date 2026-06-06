@@ -2394,7 +2394,7 @@
 
     <model name="spray_zone_A">
       <static>true</static>
-      <pose>0.5 2.7 0.015 0 0 0</pose>
+      <pose>0.5 2.4 0.015 0 0 0</pose>
       <link name="link">
         <visual name="vis">
           <geometry><cylinder><radius>0.35</radius><length>0.02</length></cylinder></geometry>
