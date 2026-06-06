@@ -104,13 +104,17 @@ class NavigatorNode(Node):
         # inflation layer (zones sit close to walls).
         self.declare_parameter('spin_speed',     0.6)        # rad/s
         self.declare_parameter('spin_cmd_topic', '/cmd_vel')
-        # Treat a goal as reached once the robot is within arrival_radius (map
-        # frame) of it, instead of waiting for Nav2 to converge to its own
-        # 0.25 m goal tolerance. On a slow/headless sim the controller keeps
-        # replanning and never quite closes the gap, so the tour would hang on
-        # zone 1 forever. arrival_radius == the zone trigger radius, so "arrived"
-        # coincides with zone_monitor firing /farm_action.
-        self.declare_parameter('arrival_radius', 0.35)
+        # Arrival handling (map frame). We let Nav2 drive the robot close to the
+        # zone CENTRE rather than bailing out the moment we touch the trigger
+        # radius (that left the robot parked off-centre). Two early exits keep
+        # the tour from hanging on a slow sim:
+        #   arrival_radius — close enough to the centre to call it arrived.
+        #   stuck_time     — if the robot stops moving (< stuck_move) for this
+        #                    long while Nav2 keeps trying, accept the current
+        #                    spot and move on instead of waiting out the timeout.
+        self.declare_parameter('arrival_radius', 0.18)
+        self.declare_parameter('stuck_time',     8.0)
+        self.declare_parameter('stuck_move',     0.05)
         self.declare_parameter('global_frame',   'map')
         self.declare_parameter('robot_frame',    'base_link')
 
@@ -123,6 +127,8 @@ class NavigatorNode(Node):
         self._home_yaw       = float(gp('home_yaw').value)
         self._spin_speed     = float(gp('spin_speed').value)
         self._arrival_radius = float(gp('arrival_radius').value)
+        self._stuck_time     = float(gp('stuck_time').value)
+        self._stuck_move     = float(gp('stuck_move').value)
         self._global_frame   = gp('global_frame').value
         self._robot_frame    = gp('robot_frame').value
 
@@ -254,20 +260,32 @@ class NavigatorNode(Node):
 
     def _drive_to(self, x: float, y: float, yaw: float = 0.0, timeout_s: float = 120.0) -> bool:
         """Send one NavigateToPose goal and block until done/cancel/timeout.
-        Also exit early (success) once within arrival_radius of the goal, so a
-        slow sim that can't converge to Nav2's tight goal tolerance still lets
-        the tour move on."""
+        Let Nav2 drive close to the zone CENTRE; exit early only when:
+          - within arrival_radius of the centre (arrived, nicely centred), or
+          - the robot hasn't moved (> stuck_move) for stuck_time while Nav2 keeps
+            trying (stuck on a slow sim) — accept the spot and move on so the
+            tour doesn't hang."""
         self._nav.goToPose(self._make_pose(x, y, yaw))
-        start = self.get_clock().now()
+        start       = self.get_clock().now()
+        last_pos    = self._map_xy()
+        last_move_t = time.monotonic()
         while not self._nav.isTaskComplete():
             if self._cancel_requested:
                 self._nav.cancelTask()
                 return False
             pos = self._map_xy()
-            if pos is not None and math.hypot(x - pos[0], y - pos[1]) <= self._arrival_radius:
-                self.get_logger().info('[NAV] within arrival_radius — good enough, moving on')
-                self._nav.cancelTask()
-                return True
+            if pos is not None:
+                if math.hypot(x - pos[0], y - pos[1]) <= self._arrival_radius:
+                    self._nav.cancelTask()
+                    return True
+                if last_pos is None or math.hypot(pos[0] - last_pos[0],
+                                                  pos[1] - last_pos[1]) > self._stuck_move:
+                    last_pos, last_move_t = pos, time.monotonic()
+                elif time.monotonic() - last_move_t > self._stuck_time:
+                    d = math.hypot(x - pos[0], y - pos[1])
+                    self.get_logger().warn(f'[NAV] stuck {d:.2f} m from centre — moving on')
+                    self._nav.cancelTask()
+                    return True
             if (self.get_clock().now() - start) > Duration(seconds=timeout_s):
                 self.get_logger().warn('[NAV] goal timeout — cancelling')
                 self._nav.cancelTask()
