@@ -44,6 +44,7 @@ Run order
      "2D Pose Estimate" in RViz at the robot's real spot first.
   3. ros2 service call /start_navigation std_srvs/srv/Trigger
 """
+import json
 import math
 import time
 import threading
@@ -141,6 +142,9 @@ class NavigatorNode(Node):
         self._completed: list = []
         self._busy = threading.Lock()   # only one motion task at a time
         self._cancel_requested = False  # set by return_home / stop
+        self._spin_pending = False      # a zone was entered -> spin asap
+        self._spin_zone    = None       # name of that zone (for logging)
+        self._spinning     = False      # guard: don't queue spins while spinning
 
         # ---- Nav2 ----
         self._nav = BasicNavigator()
@@ -152,6 +156,9 @@ class NavigatorNode(Node):
         # ---- ROS I/O ----
         self.create_subscription(Odometry,     self._odom_topic,    self._odom_cb,    10)
         self.create_subscription(BatteryState, self._battery_topic, self._battery_cb, 10)
+        # Spin at EVERY zone the robot enters (even mid-transit), driven by
+        # zone_monitor_node's /farm_action, not just at the sequential waypoints.
+        self.create_subscription(String, '/farm_action', self._farm_action_cb, 10)
         self._status_pub = self.create_publisher(String, '/navigator/status', 10)
         self._cmd_pub    = self.create_publisher(
             TwistStamped, gp('spin_cmd_topic').value, 10)
@@ -194,6 +201,17 @@ class NavigatorNode(Node):
             # return-home that aborts the zone tour after the first goal.
             if val > 0.0:
                 self._battery_seen = True
+
+    def _farm_action_cb(self, msg: String):
+        # zone_monitor fires this when the robot enters any zone (edge-triggered,
+        # once per entry). Request a spin if we're driving and not already
+        # spinning. _drive_to performs it: pause Nav2, spin 360°, resume.
+        if self._state == 'navigating' and not self._spinning and not self._spin_pending:
+            try:
+                self._spin_zone = json.loads(msg.data).get('zone')
+            except Exception:
+                self._spin_zone = None
+            self._spin_pending = True
 
     def _battery_watch(self):
         if (self._battery_seen and self._state == 'navigating'
@@ -273,6 +291,16 @@ class NavigatorNode(Node):
             if self._cancel_requested:
                 self._nav.cancelTask()
                 return False
+            # Entered a zone (even mid-transit): pause Nav2, spin 360°, resume.
+            if self._spin_pending:
+                self._spin_pending = False
+                self.get_logger().info(f'[ZONE] entered {self._spin_zone} — spinning')
+                self._nav.cancelTask()
+                self._spin_action()
+                self._nav.goToPose(self._make_pose(x, y, yaw))   # resume to waypoint
+                start, last_pos, last_move_t = (
+                    self.get_clock().now(), self._map_xy(), time.monotonic())
+                continue
             pos = self._map_xy()
             if pos is not None:
                 if math.hypot(x - pos[0], y - pos[1]) <= self._arrival_radius:
@@ -312,8 +340,9 @@ class NavigatorNode(Node):
                 self._current = wp['name']
                 self.get_logger().info(f'[NAV] -> {wp["name"]} at ({wp["x"]}, {wp["y"]})')
                 if self._drive_to(wp['x'], wp['y'], wp['yaw']):
+                    # Spin is handled by _farm_action_cb on zone entry (which also
+                    # fires as we reach this waypoint), so no separate spin here.
                     self.get_logger().info(f'[ARRIVED] {wp["name"]} — {wp["action"].upper()}')
-                    self._spin_action()  # 360° spin = spray/fertilize signal + dwell
                     self._completed.append(wp['name'])
                 else:
                     self.get_logger().warn(f'[SKIP] {wp["name"]} (cancelled or failed)')
@@ -346,29 +375,35 @@ class NavigatorNode(Node):
         yaw until a full turn completes, so it ALWAYS spins. (Nav2's own spin
         behaviour was unreliable here: its collision look-ahead aborts near
         walls, where the inflation layer flags the cell, so zones close to a
-        wall never spun.) linear.x stays 0 and the Nav2 goal is already complete,
-        so nothing else is driving the robot. Also keeps the robot on the zone
-        long enough for zone_monitor_node to fire /farm_action."""
-        target      = revolutions * 2.0 * math.pi
-        accumulated = 0.0
-        last_yaw    = self._yaw
-        t0          = time.monotonic()
-        while accumulated < target and not self._cancel_requested:
-            if time.monotonic() - t0 > 25.0:          # safety timeout
-                self.get_logger().warn('[SPIN] timeout')
-                break
-            accumulated += abs(self._wrap(self._yaw - last_yaw))
-            last_yaw     = self._yaw
-            cmd = TwistStamped()
-            cmd.header.stamp    = self.get_clock().now().to_msg()
-            cmd.header.frame_id = 'base_link'
-            cmd.twist.angular.z = self._spin_speed
-            self._cmd_pub.publish(cmd)
-            time.sleep(0.05)
-        stop = TwistStamped()
-        stop.header.stamp    = self.get_clock().now().to_msg()
-        stop.header.frame_id = 'base_link'
-        self._cmd_pub.publish(stop)
+        wall never spun.) The caller cancels the Nav2 goal first and linear.x
+        stays 0, so nothing else is driving the robot during the turn."""
+        self._spinning = True
+        try:
+            target      = revolutions * 2.0 * math.pi
+            accumulated = 0.0
+            last_yaw    = self._yaw
+            t0          = time.monotonic()
+            while accumulated < target and not self._cancel_requested:
+                if time.monotonic() - t0 > 25.0:          # safety timeout
+                    self.get_logger().warn('[SPIN] timeout')
+                    break
+                accumulated += abs(self._wrap(self._yaw - last_yaw))
+                last_yaw     = self._yaw
+                cmd = TwistStamped()
+                cmd.header.stamp    = self.get_clock().now().to_msg()
+                cmd.header.frame_id = 'base_link'
+                cmd.twist.angular.z = self._spin_speed
+                self._cmd_pub.publish(cmd)
+                time.sleep(0.05)
+            stop = TwistStamped()
+            stop.header.stamp    = self.get_clock().now().to_msg()
+            stop.header.frame_id = 'base_link'
+            self._cmd_pub.publish(stop)
+        finally:
+            # Clear any zone entry that fired during the spin (we are stationary
+            # inside one zone), so we don't immediately spin again.
+            self._spin_pending = False
+            self._spinning     = False
 
     @staticmethod
     def _wrap(a):
