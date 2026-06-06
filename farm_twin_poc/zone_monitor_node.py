@@ -20,11 +20,14 @@ ADJUST FARM_ZONES before lab session:
 """
 import json
 import math
+import time
+import threading
 import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
+from geometry_msgs.msg import TwistStamped
 
 FARM_ZONES = [
     {'name': 'spray_zone_A',     'x':  0.5, 'y':  2.7, 'radius': 0.35, 'action': 'spray',
@@ -54,6 +57,23 @@ class ZoneMonitorNode(Node):
         self.get_logger().info(f'SUB odom: {odom_topic}')
         self._pub = self.create_publisher(String, '/farm_action', 10)
         self.create_service(Trigger, '/get_zone_status', self._status_srv)
+
+        # Optional 360° spin on zone entry — for TELEOP demos ONLY. The two
+        # navigator nodes already spin on arrival, so leave this False whenever a
+        # navigator is running, or both will publish /cmd_vel_raw and fight.
+        self.declare_parameter('spin_on_entry',  False)
+        self.declare_parameter('spin_speed',     0.6)        # rad/s
+        self.declare_parameter('spin_cmd_topic', '/cmd_vel_raw')
+        self._spin_on_entry = bool(self.get_parameter('spin_on_entry').value)
+        self._spin_speed    = float(self.get_parameter('spin_speed').value)
+        self._spinning      = False
+        self._spin_pub      = None
+        if self._spin_on_entry:
+            self._spin_pub = self.create_publisher(
+                TwistStamped, self.get_parameter('spin_cmd_topic').value, 10)
+            self.get_logger().warn(
+                'spin_on_entry ON → robot spins 360° at each zone. '
+                'Use in TELEOP only; do NOT run with a navigator.')
 
         self.get_logger().info(f'Zone Monitor Node started | {len(FARM_ZONES)} zones loaded')
         for z in FARM_ZONES:
@@ -89,6 +109,28 @@ class ZoneMonitorNode(Node):
             f'[ZONE ENTRY] {zone["action"].upper()} → {zone["name"]} | '
             f'pos=({self._x:.2f},{self._y:.2f}) dist={dist:.2f}m'
         )
+        if self._spin_on_entry and not self._spinning:
+            threading.Thread(target=self._spin_360, daemon=True).start()
+
+    def _spin_360(self):
+        """Rotate ~360° on the spot to signal spraying/fertilizing (teleop demo
+        only). Time-based, no yaw feedback needed. linear.x stays 0 so
+        twin_safety_node lets the turn through."""
+        self._spinning = True
+        duration = 2.0 * math.pi / max(0.1, self._spin_speed)
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < duration:
+            cmd = TwistStamped()
+            cmd.header.stamp    = self.get_clock().now().to_msg()
+            cmd.header.frame_id = 'base_link'
+            cmd.twist.angular.z = self._spin_speed
+            self._spin_pub.publish(cmd)
+            time.sleep(0.05)
+        stop = TwistStamped()
+        stop.header.stamp    = self.get_clock().now().to_msg()
+        stop.header.frame_id = 'base_link'
+        self._spin_pub.publish(stop)
+        self._spinning = False
 
     def _status_srv(self, req, res):
         res.success = True

@@ -234,9 +234,9 @@ class NavigatorNode(Node):
                 self._publish(0.0, 0.0)
                 self.get_logger().info(
                     f'[ARRIVED] {wp["name"]} — {wp["action"].upper()} '
-                    f'pausing {wp["pause_s"]}s'
+                    f'→ spinning 360° to apply'
                 )
-                time.sleep(wp['pause_s'])
+                self._spin_in_place()   # 360° on the spot = spray/fertilize signal
                 self._completed.append(wp['name'])
                 self.get_logger().info(
                     f'[DONE] {wp["name"]} | '
@@ -337,6 +337,26 @@ class NavigatorNode(Node):
             time.sleep(0.1)
 
         return False
+
+    def _spin_in_place(self, revolutions: float = 1.0):
+        """Rotate ~360° on the spot at a zone to signal the spray/fertilize
+        action. Tracks odom yaw so it is one full turn regardless of speed.
+        linear.x stays 0, so twin_safety_node never blocks this command, and
+        staying on the zone keeps zone_monitor_node firing /farm_action."""
+        self._state = 'spraying'
+        target      = revolutions * 2.0 * math.pi
+        accumulated = 0.0
+        last_yaw    = self._yaw
+        t0          = time.monotonic()
+        while (self._navigating or self._returning) and accumulated < target:
+            if time.monotonic() - t0 > 25.0:          # safety timeout
+                self.get_logger().warn('[SPIN] timeout')
+                break
+            accumulated += abs(self._wrap(self._yaw - last_yaw))
+            last_yaw     = self._yaw
+            self._publish(0.0, self._max_ang)
+            time.sleep(0.05)
+        self._publish(0.0, 0.0)
 
     def _escape(self):
         """Back up + large turn to escape stuck situation."""

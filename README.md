@@ -113,7 +113,7 @@ farm_twin_poc/
 │   ├── map_to_world.py        SLAM map → Gazebo SDF world
 │   └── world_to_map.py        Gazebo SDF world → Nav2 map (bundled at-home map)
 ├── worlds/
-│   └── lab_world.sdf          Lab room (with colored zone markers)
+│   └── lab_world.sdf          Lab room (with flat colored zone tiles)
 └── maps/
     └── lab_map.yaml / .pgm    Nav2 map generated from lab_world.sdf (bundled)
 ```
@@ -122,9 +122,19 @@ farm_twin_poc/
 
 ## Farm Zones
 
-4 predefined zones marked as colored spheres in Gazebo:
+4 predefined zones marked as **flat colored floor tiles** (0.45 × 0.45 m) in Gazebo:
 - 🔴 **Red** = spray zones (Striga herbicide)
 - 🟢 **Green** = fertilize zones (NPK application)
+
+> Tiles are deliberately flat (~2 cm tall) and visual-only. An earlier version
+> used raised spheres, but in gz-sim the LiDAR raytraces against **visual**
+> geometry, so a sphere reaching up to the LiDAR plane (~0.18 m) was seen as an
+> obstacle — the robot stopped short and never reached the centre to trigger an
+> action. A low tile sits under the LiDAR beam, so the robot drives over it and
+> `zone_monitor_node` fires `/farm_action`. The tile is inscribed in the 0.35 m
+> trigger circle, so the action logs the instant the robot touches the tile.
+> When the robot reaches a zone it **spins 360° in place** to signal the
+> spray/fertilize action (visible in Gazebo + RViz).
 
 Coordinates are in the odom frame (metres from robot start position).
 Update in **all three** places before lab session:
@@ -241,8 +251,18 @@ ros2 run turtlebot3_teleop teleop_keyboard \
 ```
 
 - Drive toward wall with `w` → robot stops automatically (safety stop)
-- Drive toward colored sphere → farm action triggers
+- Drive onto a colored floor tile → farm action triggers, logged to `/farm_action`
 - `ros2 topic echo /sim/cmd_vel` → same values as `/cmd_vel` (State Sync)
+
+> **Auto-spin in teleop:** the 360° spray-spin is built into the *navigators*,
+> so it fires in autonomous mode (Mode 2/3), not while driving by hand. To get
+> the spin during manual teleop, run `zone_monitor_node` yourself with
+> `spin_on_entry:=true` instead of letting `farm_twin.launch.py` start it (do
+> NOT run both — they would both publish `/cmd_vel_raw`):
+> ```bash
+> ros2 run farm_twin_poc zone_monitor_node --ros-args \
+>     -p odom_topic:=/sim/odom -p spin_on_entry:=true
+> ```
 
 ### Mode 2 — Autonomous navigation
 
@@ -255,8 +275,8 @@ ros2 run turtlebot3_teleop teleop_keyboard \
 ros2 service call /start_navigation std_srvs/srv/Trigger
 ```
 
-Robot navigates to each zone autonomously, avoids obstacles, pauses 2s at
-each zone for spray/fertilize operation.
+Robot navigates to each zone autonomously, avoids obstacles, and spins 360° at
+each zone to signal the spray/fertilize operation.
 
 Monitor:
 ```bash
@@ -465,7 +485,7 @@ After B4 is running:
 ros2 service call /start_navigation std_srvs/srv/Trigger
 ```
 
-Robot drives autonomously to each farm zone, avoids obstacles, pauses 2s at
+Robot drives autonomously to each farm zone, avoids obstacles, and spins 360° at
 each zone. Zone actions logged by Digital Entity automatically.
 
 Monitor:
@@ -634,7 +654,7 @@ git pull && colcon build --packages-select farm_twin_poc && source install/setup
 
 **x=y=0 in `/dt/status`:** Wrong `odom_topic` — check `farm_twin.launch.py`.
 
-**Zone actions not triggering:** Drive within `radius` metres (default 0.2 m).
+**Zone actions not triggering:** Drive within `radius` metres (default 0.35 m).
 Check `ros2 topic hz /odom`.
 
 **Robot stuck during navigation:** Automatic escape after 4s — wait or call `/stop_navigation`.

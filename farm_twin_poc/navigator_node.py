@@ -235,7 +235,7 @@ class NavigatorNode(Node):
                 self.get_logger().info(f'[NAV] -> {wp["name"]} at ({wp["x"]}, {wp["y"]})')
                 if self._drive_to(wp['x'], wp['y'], wp['yaw']):
                     self.get_logger().info(f'[ARRIVED] {wp["name"]} — {wp["action"].upper()}')
-                    self._dwell(wp['pause_s'])  # let zone_monitor fire /farm_action
+                    self._spin_action()  # 360° spin = spray/fertilize signal + dwell
                     self._completed.append(wp['name'])
                 else:
                     self.get_logger().warn(f'[SKIP] {wp["name"]} (cancelled or failed)')
@@ -260,6 +260,18 @@ class NavigatorNode(Node):
             self.get_logger().info('[HOME] reached' if ok else '[HOME] failed/cancelled')
             self._current = None
             self._state = 'idle'
+
+    def _spin_action(self, dist: float = 2 * math.pi):
+        """Spin ~360° in place via Nav2's spin behaviour to signal the
+        spray/fertilize action. Blocks until the spin finishes (also keeps the
+        robot on the zone long enough for zone_monitor_node to fire
+        /farm_action). Respects /stop_navigation and /return_home cancels."""
+        self._nav.spin(spin_dist=dist, time_allowance=25)
+        while not self._nav.isTaskComplete():
+            if self._cancel_requested:
+                self._nav.cancelTask()
+                return
+            time.sleep(0.1)
 
     def _dwell(self, seconds: float):
         # Wall-clock dwell so zone_monitor_node has time to fire /farm_action.
