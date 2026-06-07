@@ -33,7 +33,6 @@ setup(
             'twin_safety_node  = farm_twin_poc.twin_safety_node:main',
             'zone_monitor_node = farm_twin_poc.zone_monitor_node:main',
             'dt_logger_node    = farm_twin_poc.dt_logger_node:main',
-            'navigator_node    = farm_twin_poc.navigator:main',
             'nav2_navigator    = farm_twin_poc.navigator_node:main',
         ],
     },

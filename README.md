@@ -21,50 +21,82 @@ mechanisms are feasible before building the full system.
 
 ---
 
-## What Does This PoC Prove?
+## What Does This PoC Prove? (the three assignment goals)
+
+The PoC is built to demonstrate **exactly three things**, each with a concrete,
+reproducible piece of evidence. Everything else in the package exists only to
+serve these three goals.
 
 ### ① Bi-directional Communication
-- PE → DE: `/scan` (LiDAR) and `/odom` (position) flow from robot to nodes
-- DE → PE: `twin_safety_node` sends safe `/cmd_vel` back to robot
+Data flows **both ways** between the Physical Entity (robot) and the Digital
+Entity (the ROS 2 nodes):
 
+- **PE → DE**: the robot streams `/scan` (LiDAR) and `/odom` (pose) up to the nodes.
+- **DE → PE**: the nodes send motion commands back down on `/cmd_vel`.
+
+**Evidence:**
 ```bash
-ros2 topic echo /scan --once     # PE → DE
-ros2 topic echo /cmd_vel --once  # DE → PE
+ros2 topic echo /scan    --once    # PE → DE : sensor data arriving from the robot
+ros2 topic echo /odom    --once    # PE → DE : pose arriving from the robot
+ros2 topic echo /cmd_vel --once    # DE → PE : command going back to the robot
 ```
+Seeing live data on `/scan` + `/odom` **and** on `/cmd_vel` at the same time is
+the proof: the link is not one-way.
 
 ### ② State Synchronisation
-`twin_safety_node` publishes the **same command** simultaneously to:
-- `/cmd_vel` → real robot (Physical Entity)
-- `/sim/cmd_vel` → Gazebo twin (Digital Entity simulation)
+The Digital Entity keeps a **simulated twin** of the robot in lock-step with the
+physical one. `twin_safety_node` publishes the **identical command** to two
+places at the same instant:
 
-`dt_logger_node` tracks both positions and computes `sync_error_m`:
+- `/cmd_vel` → the real robot (Physical Entity)
+- `/sim/cmd_vel` → the Gazebo twin (Digital Entity simulation)
 
+`dt_logger_node` then watches both poses and computes `sync_error_m`
+(the distance between real pose and twin pose).
+
+**Evidence:**
 ```bash
-ros2 topic echo /sim/cmd_vel     # same values as /cmd_vel → motion sync
-ros2 topic echo /dt/status --full-length   # real/sim_position, sync_error_m, action counts
+# Same numbers appear on both topics → the twin mirrors the robot's motion
+ros2 topic echo /cmd_vel
+ros2 topic echo /sim/cmd_vel
+
+# sync_error_m close to 0 → real pose and twin pose stay aligned
+ros2 topic echo /dt/status --full-length
 ros2 service call /get_twin_status std_srvs/srv/Trigger
 ros2 service call /get_dt_status   std_srvs/srv/Trigger
-# sync_error_m close to 0 → strong State Synchronisation evidence
 ```
 
 > **Use `--full-length`** on `ros2 topic echo /dt/status`. Without it, ros2 cuts
 > the JSON off with `...` after the first ~100 chars, so fields like
-> `fertilize_actions` / `spray_actions` get hidden.
->
-> Two services give the same data without the truncation:
+> `fertilize_actions` / `spray_actions` get hidden. The two services below give
+> the same data without the truncation:
 > ```bash
-> ros2 service call /get_dt_status std_srvs/srv/Trigger   # summary now (counts, last_action)
-> ros2 service call /get_dt_log    std_srvs/srv/Trigger   # FULL history — every spray/fertilize event + timestamp
+> ros2 service call /get_dt_status std_srvs/srv/Trigger   # snapshot: counts, sync_error_m, last_action
+> ros2 service call /get_dt_log    std_srvs/srv/Trigger   # FULL history: every spray/fertilize event + timestamp
 > ```
-> `/get_dt_status` = current snapshot; `/get_dt_log` = the whole action history.
 
-### ③ Object/Environment Interaction
-**A. Safety stop:** LiDAR detects obstacle < 0.25 m → robot stops automatically.
+### ③ Obstacle Avoidance & Object/Environment Interaction
+The robot perceives its surroundings and **acts on them**, in two ways:
 
-**B. Farm zone actions:** Robot navigates to farm zones → DE logs spray/fertilize
-action with timestamp.
+**A. Reflex safety stop (twin_safety_node).** A close obstacle on the LiDAR
+(< 0.25 m in the front arc) overrides the command and stops forward motion
+(turning is still allowed). This is the fast, low-level reflex.
 
+**B. Planned obstacle avoidance (Nav2).** During autonomous navigation, **Nav2
+is the path planner**: it builds a costmap from `/scan`, plans a global path to
+each farm zone, and steers around walls/obstacles locally. The robot never
+gropes blindly — it follows a planned, collision-free path.
+
+**C. Environment interaction (farm zones).** When the robot reaches a farm zone,
+`zone_monitor_node` fires a `/farm_action` (spray/fertilize) and the robot spins
+360° in place to signal the operation; `dt_logger_node` logs it with a timestamp.
+
+**Evidence:**
 ```bash
+# A — safety stop: drive toward a wall in teleop, the robot stops short
+ros2 service call /get_twin_status std_srvs/srv/Trigger   # shows real_blocked / times_blocked
+
+# B + C — Nav2 plans a path to each zone, avoids obstacles, logs the action
 ros2 topic echo /farm_action
 ros2 service call /get_dt_log std_srvs/srv/Trigger
 ```
@@ -75,18 +107,34 @@ ros2 service call /get_dt_log std_srvs/srv/Trigger
 
 ```
 Physical Entity (TurtleBot3 Burger)
-  /scan ──────────► twin_safety_node ──► /cmd_vel     → real robot
-  /odom ──────────► zone_monitor_node    /sim/cmd_vel → Gazebo twin
+  /scan ──────────► twin_safety_node ──► /cmd_vel     → real robot     (Goal ① + ③A)
+  /odom ──────────► zone_monitor_node    /sim/cmd_vel → Gazebo twin    (Goal ②)
                          │
                    /farm_action
                          │
-                    dt_logger_node ──► /dt/status (every 5s)
+                    dt_logger_node ──► /dt/status (every 5 s)          (Goal ②)
 
 Gazebo twin (PushRosNamespace 'sim'):
   /sim/scan  → twin_safety_node
-  /sim/odom  → zone_monitor_node, navigator_node
+  /sim/odom  → zone_monitor_node
   /sim/cmd_vel ← twin_safety_node
+
+Autonomous navigation (Goal ③B):
+  Nav2 (nav2_navigator) ──► plans path ──► /cmd_vel ──► robot, avoiding obstacles
+  zone_monitor_node ──► /farm_action ──► dt_logger_node
 ```
+
+The PoC has two run-time stacks that demonstrate different goals:
+
+- **Digital-Twin stack** (`gazebo_twin.launch.py` + `farm_twin.launch.py`,
+  driven by teleop) → Goals ① and ② (and the reflex safety stop, ③A).
+- **Nav2 autonomous stack** (`gazebo_nav2_demo.launch.py` at home /
+  `navigation.launch.py` at the lab) → Goal ③ (planned obstacle avoidance +
+  zone actions).
+
+> They are **separate runs**: `twin_safety_node` filters teleop into `/cmd_vel`,
+> while Nav2 drives `/cmd_vel` directly. Running both at once would make two
+> sources fight over the robot, so do **one at a time**.
 
 ---
 
@@ -94,13 +142,16 @@ Gazebo twin (PushRosNamespace 'sim'):
 
 | Concept | Where |
 |---|---|
-| **Nodes** | `twin_safety_node`, `zone_monitor_node`, `dt_logger_node`, `navigator_node` (reactive), `nav2_navigator` (Nav2) |
+| **Nodes** | `twin_safety_node`, `zone_monitor_node`, `dt_logger_node`, `nav2_navigator` (Nav2 path planner), `safety_stop_node` (standalone sim safety stop) |
 | **Topics** | `/scan`, `/odom`, `/cmd_vel`, `/sim/cmd_vel`, `/farm_action`, `/dt/status`, `/navigator/status` |
 | **Services** | `/get_twin_status`, `/get_zone_status`, `/get_dt_status`, `/get_dt_log`, `/start_navigation`, `/return_home`, `/stop_navigation`, `/nav_status` |
 
-> **Two navigation modes:**
-> - `navigator_node` (reactive, executable `navigator_node`, file `navigator.py`) — hand-coded go-to-goal + obstacle avoidance. No map needed. Used by `farm_twin.launch.py`.
-> - `nav2_navigator` (Nav2 Simple Commander, executable `nav2_navigator`, file `navigator_node.py`) — Nav2 plans the path. Used by `navigation.launch.py` (lab — needs your real SLAM map `~/map.yaml`) and `gazebo_nav2_demo.launch.py` (home — uses the bundled `maps/lab_map.yaml`, no SLAM needed). Adds auto return-home on low battery.
+> **One navigator only:** `nav2_navigator` (executable `nav2_navigator`, file
+> `navigator_node.py`) uses the **Nav2 Simple Commander** — Nav2 plans the path
+> to each zone and handles obstacle avoidance. Used by `navigation.launch.py`
+> (lab — needs your real SLAM map `~/map.yaml`) and `gazebo_nav2_demo.launch.py`
+> (home — uses the bundled `maps/lab_map.yaml`, no SLAM needed). It also does
+> auto return-home on low battery.
 
 ---
 
@@ -109,24 +160,26 @@ Gazebo twin (PushRosNamespace 'sim'):
 ```
 farm_twin_poc/
 ├── farm_twin_poc/
-│   ├── twin_safety_node.py    Node 2 — safety stop + state sync
-│   ├── zone_monitor_node.py   Node 3 — farm zone detection
-│   ├── dt_logger_node.py      Node 4 — Digital Entity logger
-│   ├── navigator.py           Node 5a — reactive navigation (no map needed)
-│   └── navigator_node.py      Node 5b — Nav2 navigation + return-home (needs map)
+│   ├── twin_safety_node.py    Node 2 — safety stop + state sync (Goals ① ② ③A)
+│   ├── zone_monitor_node.py   Node 3 — farm zone detection (Goal ③C)
+│   ├── dt_logger_node.py      Node 4 — Digital Entity logger (Goal ②)
+│   ├── navigator_node.py      Node 5 — Nav2 navigation + return-home (Goal ③B)
+│   └── safety_stop_node.py    standalone sim-only safety stop (optional)
 ├── launch/
-│   ├── gazebo_twin.launch.py     Gazebo Digital Twin (lab_world.sdf)
-│   ├── farm_twin.launch.py       Nodes 2+3+4+5a (reactive full system)
-│   ├── slam.launch.py            SLAM with Cartographer
-│   ├── gazebo_nav2_demo.launch.py  Nav2 autonomous demo at home (Gazebo)
-│   └── navigation.launch.py      Nav2 + nodes 3+4+5b on real robot (lab)
+│   ├── gazebo_twin.launch.py        Gazebo Digital Twin (lab_world.sdf)
+│   ├── farm_twin.launch.py          Nodes 2+3+4 — twin/state-sync stack (teleop)
+│   ├── slam.launch.py               SLAM with Cartographer (build the lab map)
+│   ├── gazebo_nav2_demo.launch.py   Nav2 autonomous demo at home (Gazebo)
+│   └── navigation.launch.py         Nav2 + nodes 3+4 on the real robot (lab)
 ├── scripts/
 │   ├── map_to_world.py        SLAM map → Gazebo SDF world
 │   └── world_to_map.py        Gazebo SDF world → Nav2 map (bundled at-home map)
 ├── worlds/
 │   └── lab_world.sdf          Lab room (with flat colored zone tiles)
-└── maps/
-    └── lab_map.yaml / .pgm    Nav2 map generated from lab_world.sdf (bundled)
+├── maps/
+│   └── lab_map.yaml / .pgm    Nav2 map generated from lab_world.sdf (bundled)
+└── config/
+    └── nav2_sim.yaml          Nav2 params tuned for the slow (GPU-less) sim
 ```
 
 ---
@@ -149,11 +202,12 @@ Spray (red) zones are on the bottom row (near the robot start) and fertilize
 > When the robot reaches a zone it **spins 360° in place** to signal the
 > spray/fertilize action (visible in Gazebo + RViz).
 
-Coordinates are in the odom frame (metres from robot start position).
-Update in **all three** places before lab session:
+Coordinates are in the map/odom frame (metres from robot start position).
+Update in **both** places before the lab session:
 - `farm_twin_poc/zone_monitor_node.py` → `FARM_ZONES`
-- `farm_twin_poc/navigator.py` → `WAYPOINTS`  (reactive mode)
-- `farm_twin_poc/navigator_node.py` → `WAYPOINTS`  (Nav2 mode)
+- `farm_twin_poc/navigator_node.py` → `WAYPOINTS`  (Nav2 goals)
+
+…and the `<pose>` of each zone disc in `worlds/lab_world.sdf` for the visuals.
 
 ---
 
@@ -231,7 +285,7 @@ source install/setup.bash
 Verify:
 ```bash
 ros2 pkg executables farm_twin_poc
-# Expected: dt_logger_node, nav2_navigator, navigator_node, safety_stop_node, twin_safety_node, zone_monitor_node
+# Expected: dt_logger_node, nav2_navigator, safety_stop_node, twin_safety_node, zone_monitor_node
 ```
 
 > **Build error "failed to create symbolic link":**
@@ -244,14 +298,18 @@ ros2 pkg executables farm_twin_poc
 
 ## A3. Test simulation at home (2 modes)
 
-### Mode 1 — Manual teleop
+### Mode 1 — Digital-Twin demo (teleop) → proves Goals ① ② ③A
 
-**Terminal 1 — Gazebo:**
+This stack shows **bi-directional communication**, **state synchronisation**,
+and the **reflex safety stop**. You drive by hand; `twin_safety_node` mirrors
+every command into the Gazebo twin and blocks forward motion near obstacles.
+
+**Terminal 1 — Gazebo twin:**
 ```bash
 ros2 launch farm_twin_poc gazebo_twin.launch.py
 ```
 
-**Terminal 2 — Farm Twin nodes:**
+**Terminal 2 — Twin / state-sync nodes:**
 ```bash
 ros2 launch farm_twin_poc farm_twin.launch.py
 # Default: lab:=false (uses /sim/scan, /sim/odom from Gazebo)
@@ -263,58 +321,26 @@ ros2 run turtlebot3_teleop teleop_keyboard \
     --ros-args -r /cmd_vel:=/cmd_vel_raw
 ```
 
-- Drive toward wall with `w` → robot stops automatically (safety stop)
-- Drive onto a colored floor tile → farm action triggers, logged to `/farm_action`
-- `ros2 topic echo /sim/cmd_vel` → same values as `/cmd_vel` (State Sync)
+- Drive toward a wall with `w` → robot stops automatically (**Goal ③A** safety stop)
+- `ros2 topic echo /sim/cmd_vel` → same values as `/cmd_vel` (**Goal ②** state sync)
+- `ros2 topic echo /scan --once` + `/cmd_vel --once` (**Goal ①** bi-directional)
+- Drive onto a colored floor tile → `/farm_action` fires (**Goal ③C** zone action)
 
-> **Auto-spin in teleop:** the 360° spray-spin is built into the *navigators*,
-> so it fires in autonomous mode (Mode 2/3), not while driving by hand. To get
-> the spin during manual teleop, run `zone_monitor_node` yourself with
+> **Auto-spin in teleop:** the 360° spray-spin is built into the *Nav2 navigator*,
+> so it fires in autonomous mode (Mode 2), not while driving by hand. To get the
+> spin during manual teleop, run `zone_monitor_node` yourself with
 > `spin_on_entry:=true` instead of letting `farm_twin.launch.py` start it (do
-> NOT run both — they would both publish `/cmd_vel_raw`):
+> NOT run both — they would both command motion):
 > ```bash
 > ros2 run farm_twin_poc zone_monitor_node --ros-args \
 >     -p odom_topic:=/sim/odom -p spin_on_entry:=true
 > ```
 
-### Mode 2 — Autonomous navigation
+### Mode 2 — Nav2 autonomous navigation (planned path) → proves Goal ③B
 
-**Terminal 1 — Gazebo** (same as above)
-
-**Terminal 2 — Farm Twin nodes** (same as above)
-
-**Terminal 3 — Start autonomous run:**
-```bash
-ros2 service call /start_navigation std_srvs/srv/Trigger
-```
-
-Robot navigates to each zone autonomously, avoids obstacles, and spins 360° at
-each zone to signal the spray/fertilize operation.
-
-Monitor:
-```bash
-ros2 topic echo /navigator/status   # current zone, state
-ros2 topic echo /farm_action        # zone actions triggering
-ros2 service call /nav_status std_srvs/srv/Trigger
-```
-
-Stop:
-```bash
-ros2 service call /stop_navigation std_srvs/srv/Trigger
-```
-
-Return to start position (manual):
-```bash
-ros2 service call /return_home std_srvs/srv/Trigger
-```
-
-Return home automatically when battery is low (< 20% or < 11V) — no action needed, triggers automatically at lab with real robot.
-
-### Mode 3 — Nav2 autonomous navigation (planned path)
-
-Use this when you want **Nav2 to plan the path** to each zone instead of the
-reactive go-to-goal. Runs in the lab world (no `sim` namespace) so the TF tree
-is clean.
+This is the **only autonomous mode**: **Nav2 plans the path** to each zone and
+avoids obstacles. It runs in the lab world WITHOUT the `sim` namespace so the TF
+tree is clean (`map -> odom -> base_link`) and Nav2 works.
 
 **No map needed at home** — the package ships `maps/lab_map.yaml`, generated
 from `lab_world.sdf` via `scripts/world_to_map.py`, so the Gazebo walls and the
@@ -355,9 +381,13 @@ initial pose automatically (`set_initial_pose:=true`); if it didn't, click
 ros2 service call /start_navigation std_srvs/srv/Trigger
 ```
 
-Monitor / control (same services as the other modes):
+Robot drives a **Nav2-planned path** to each zone, avoids obstacles, and spins
+360° at each zone to signal the spray/fertilize operation.
+
+Monitor / control:
 ```bash
 ros2 topic echo /navigator/status    # state, current zone, battery, completed
+ros2 topic echo /farm_action         # zone actions triggering (Goal ③C)
 ros2 service call /nav_status      std_srvs/srv/Trigger
 ros2 service call /return_home     std_srvs/srv/Trigger   # go home now
 ros2 service call /stop_navigation std_srvs/srv/Trigger
@@ -427,7 +457,7 @@ the run will fail:
 - [ ] **Built & sourced** on the lab laptop (B1), `ros2 pkg executables farm_twin_poc` lists all nodes.
 - [ ] **Robot bringup running** (B2) and `ros2 topic hz /scan` ≈ 10 Hz from the laptop.
 - [ ] **A real SLAM map** `~/map.yaml` of the actual room (B3).
-- [ ] **Zone coordinates set to the real room** in `FARM_ZONES` + both `WAYPOINTS` (B9),
+- [ ] **Zone coordinates set to the real room** in `FARM_ZONES` + `WAYPOINTS` (B9),
       and `home_x/home_y` to the real start pose. The shipped coords are for the
       sim world and will be meaningless in the real room.
 - [ ] **AMCL localized**: in RViz, "2D Pose Estimate" at the robot's true spot.
@@ -495,7 +525,7 @@ ros2 run nav2_map_server map_saver_cli -f ~/map --ros-args -p map_topic:=/map
 
 ---
 
-## B4. Run the full Digital Twin
+## B4. Digital-Twin demo (teleop) → proves Goals ① ② ③A
 
 Open **5 terminals**. Terminal 1 is the SSH/robot one from B2; terminals 2–5 are
 laptop terminals → **SETUP BLOCK first in each**.
@@ -507,56 +537,33 @@ laptop terminals → **SETUP BLOCK first in each**.
 ros2 launch farm_twin_poc gazebo_twin.launch.py
 ```
 
-**Terminal 3 — Farm Twin system** — SETUP BLOCK, then:
+**Terminal 3 — Twin / state-sync system** — SETUP BLOCK, then:
 ```bash
 ros2 launch farm_twin_poc farm_twin.launch.py lab:=true
 # lab:=true switches all topics to the real robot: /scan, /odom
 ```
 
-**Terminal 4 — Teleop (manual mode)** — SETUP BLOCK, then:
+**Terminal 4 — Teleop** — SETUP BLOCK, then:
 ```bash
 ros2 run turtlebot3_teleop teleop_keyboard --ros-args -r /cmd_vel:=/cmd_vel_raw
 ```
 
-**Terminal 5 — Monitor** — SETUP BLOCK, then:
+**Terminal 5 — Monitor the sync** — SETUP BLOCK, then:
 ```bash
-ros2 topic echo /sim/cmd_vel
+ros2 topic echo /sim/cmd_vel        # same as /cmd_vel → state synchronisation
 ```
+
+Drive the robot: it stops at obstacles (③A), the twin mirrors its motion (②),
+and sensor data flows up while commands flow down (①).
 
 ---
 
-## B5. Autonomous navigation at lab
+## B5. Nav2 autonomous navigation at lab (planned path) → proves Goal ③B
 
-After B4 is running, in a new laptop terminal — SETUP BLOCK, then:
-
-```bash
-ros2 service call /start_navigation std_srvs/srv/Trigger
-```
-
-Robot drives autonomously to each farm zone (spray/red zones first, then
-fertilize/green), avoids obstacles, and spins 360° at each zone. Zone actions
-logged by Digital Entity automatically.
-
-Monitor:
-```bash
-ros2 topic echo /navigator/status
-ros2 topic echo /farm_action
-ros2 service call /get_dt_log std_srvs/srv/Trigger
-```
-
-Stop anytime:
-```bash
-ros2 service call /stop_navigation std_srvs/srv/Trigger
-```
-
----
-
-## B5-bis. Nav2 autonomous navigation at lab (planned path)
-
-Tutor-recommended mode: zones are fixed and you already have a SLAM map, so
-let **Nav2 plan the path**. This replaces the reactive run above — do **not**
-run `farm_twin.launch.py` autonomous at the same time (they both publish
-motion). Robot bringup (B2) must be running, and you need `~/map.yaml` (B3).
+Zones are fixed and you already have a SLAM map, so **Nav2 plans the path**.
+This is a **separate run** from B4 — do **not** run `farm_twin.launch.py`
+autonomous and Nav2 at the same time (they both command motion). Robot bringup
+(B2) must be running, and you need `~/map.yaml` (B3).
 
 > ⚠️ **Set the zone coordinates to the REAL room first.** The `WAYPOINTS` /
 > `FARM_ZONES` shipped in the code are for the Gazebo world. In the real lab the
@@ -581,14 +588,26 @@ ros2 service call /start_navigation std_srvs/srv/Trigger
 
 The robot drives a Nav2-planned path to each zone; `zone_monitor` fires
 `/farm_action` and `dt_logger` logs each spray/fertilize. Auto return-home on
-low battery works for real here (real TB3 publishes `/battery_state`).
+low battery works for real here (the real TB3 publishes `/battery_state`).
+
+Monitor:
+```bash
+ros2 topic echo /navigator/status
+ros2 topic echo /farm_action
+ros2 service call /get_dt_log std_srvs/srv/Trigger
+```
+
+Stop anytime:
+```bash
+ros2 service call /stop_navigation std_srvs/srv/Trigger
+```
 
 ---
 
 ## B6. Battery monitoring + Return home
 
-The robot automatically returns to its start position when battery is low
-(< 20% or < 11V). This triggers without any manual intervention.
+During Nav2 navigation the robot automatically returns to its start position
+when battery is low (< 20%). This triggers without any manual intervention.
 
 **Manual return home at any time:**
 ```bash
@@ -598,15 +617,12 @@ ros2 service call /return_home std_srvs/srv/Trigger
 Monitor battery + navigation state:
 ```bash
 ros2 topic echo /navigator/status
-# Shows: state=... | battery=85% | returning=False | completed=[...]
+# Shows: state=... | current=... | battery=85% | completed=[...]
 ```
 
-The home position depends on which navigator you run:
-- **Reactive** (`navigator_node`, via `farm_twin.launch.py`): home is recorded
-  automatically when the robot first publishes `/odom` — no coordinates needed.
-- **Nav2** (`nav2_navigator`, via `navigation.launch.py`): home is set by the
-  `home_x` / `home_y` / `home_yaw` launch args. Set them to the robot's real
-  start pose, or it will return to the wrong spot.
+The home position is set by the `home_x` / `home_y` / `home_yaw` launch args of
+`navigation.launch.py` (lab) / `gazebo_nav2_demo.launch.py` (home). Set them to
+the robot's real start pose, or it will return to the wrong spot.
 
 > **At home (Gazebo):** `/battery_state` may not publish → battery monitoring
 > inactive. Use `/return_home` manually, or fake a low battery to test:
@@ -616,24 +632,26 @@ The home position depends on which navigator you run:
 
 ---
 
-## B7. Demo the 3 DTAS criteria
+## B7. Demo the 3 assignment goals
 
 ### ① Bi-directional Communication
 ```bash
-ros2 topic echo /scan --once      # PE → DE
+ros2 topic echo /scan    --once   # PE → DE
+ros2 topic echo /odom    --once   # PE → DE
 ros2 topic echo /cmd_vel --once   # DE → PE
 ```
 
-### ② State Synchronisation
+### ② State Synchronisation  (run the B4 twin stack)
 ```bash
 ros2 topic echo /sim/cmd_vel      # same values as /cmd_vel → motion sync
 ros2 service call /get_twin_status std_srvs/srv/Trigger
+ros2 service call /get_dt_status   std_srvs/srv/Trigger   # sync_error_m
 ```
 
-### ③ Object/Environment Interaction
-**Safety stop:** Place object in front → robot stops.
+### ③ Obstacle Avoidance & Object/Environment Interaction
+**Reflex safety stop (③A):** place an object in front in teleop → robot stops.
 
-**Autonomous zone navigation:**
+**Planned avoidance + zone actions (③B + ③C):** run the B5 Nav2 stack:
 ```bash
 ros2 service call /start_navigation std_srvs/srv/Trigger
 ros2 topic echo /farm_action
@@ -666,17 +684,16 @@ ros2 service call /nav_status       std_srvs/srv/Trigger
 
 ## B9. Adjust zone positions
 
-Drive robot to each zone location, check tọa độ:
+Drive the robot to each zone location and read the coordinates:
 ```bash
 ros2 topic echo /odom --once | grep -A3 "position"
 ```
 
-Update same coordinates in all three places:
+Update the same coordinates in **both** places:
 - `farm_twin_poc/zone_monitor_node.py` → `FARM_ZONES`
-- `farm_twin_poc/navigator.py` → `WAYPOINTS`  (reactive)
-- `farm_twin_poc/navigator_node.py` → `WAYPOINTS`  (Nav2)
+- `farm_twin_poc/navigator_node.py` → `WAYPOINTS`  (Nav2 goals)
 
-Also update `<pose>` in `worlds/lab_world.sdf` for visual markers.
+Also update `<pose>` in `worlds/lab_world.sdf` for the visual markers.
 
 ```bash
 git add . && git commit -m "Update zone coordinates" && git push
@@ -688,7 +705,7 @@ git pull && colcon build --packages-select farm_twin_poc && source install/setup
 ## B10. Shutdown procedure
 
 1. `Ctrl+C` — Terminal 4 (teleop)
-2. `Ctrl+C` — Terminal 3 (farm twin nodes)
+2. `Ctrl+C` — Terminal 3 (farm twin nodes) / the Nav2 launch
 3. `Ctrl+C` — Terminal 2 (Gazebo)
 4. Terminal 1: `sudo shutdown now` — wait for SSH to drop
 5. Flip power switch on robot
@@ -718,9 +735,7 @@ the **map** frame, but under Nav2 `/odom` drifts (AMCL corrects it via a
 `map->odom` transform), so the robot reaches the tile in map coords while
 `/odom` reads a different number. The Nav2 launches fix this by running
 `zone_monitor_node` with `position_source:=tf` (looks up `map->base_link`).
-Reactive/teleop keep `position_source:=odom` (no map, `/odom` ≈ world).
-
-**Robot stuck during navigation:** Automatic escape after 4s — wait or call `/stop_navigation`.
+The teleop twin demo keeps `position_source:=odom` (no map, `/odom` ≈ world).
 
 **Robot not returning home:** Check `/odom` is publishing. Call `/nav_status` to see home position.
 

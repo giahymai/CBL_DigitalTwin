@@ -84,9 +84,9 @@ class ZoneMonitorNode(Node):
             self.create_subscription(Odometry, odom_topic, self._odom_cb, 10)
             self.get_logger().info(f'Position source: odom topic {odom_topic}')
 
-        # Optional 360° spin on zone entry — for TELEOP demos ONLY. The two
-        # navigator nodes already spin on arrival, so leave this False whenever a
-        # navigator is running, or both will publish /cmd_vel_raw and fight.
+        # Optional 360° spin on zone entry — for TELEOP demos ONLY. The Nav2
+        # navigator already spins on arrival, so leave this False whenever the
+        # navigator is running, or the two will both command motion and fight.
         self.declare_parameter('spin_on_entry',  False)
         self.declare_parameter('spin_speed',     0.6)        # rad/s
         self.declare_parameter('spin_cmd_topic', '/cmd_vel_raw')

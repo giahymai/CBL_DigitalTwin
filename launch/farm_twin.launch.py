@@ -7,7 +7,17 @@ from launch.conditions import IfCondition, UnlessCondition
 
 def generate_launch_description():
     """
-    farm_twin.launch.py — Full Digital Twin system (Nodes 2+3+4+5)
+    farm_twin.launch.py — Digital Twin core (Nodes 2+3+4)
+
+    This is the Digital-Twin / state-sync stack, driven by TELEOP. It proves
+    Bi-directional Communication and State Synchronisation:
+      - twin_safety_node : safe /cmd_vel back to the robot AND identical
+                           /sim/cmd_vel to the Gazebo twin (state sync) + safety stop
+      - zone_monitor_node: fires /farm_action when the robot enters a farm zone
+      - dt_logger_node   : Digital Entity log + /dt/status (sync_error_m)
+
+    Autonomous path planning is NOT here — that is Nav2's job
+    (gazebo_nav2_demo.launch.py at home, navigation.launch.py at the lab).
 
     AT HOME (Gazebo simulation):
       ros2 launch farm_twin_poc farm_twin.launch.py
@@ -84,42 +94,6 @@ def generate_launch_description():
             parameters=[{
                 'real_odom_topic': '/odom',      # at lab: real robot
                 'sim_odom_topic':  '/sim/odom',  # Gazebo twin
-            }],
-            condition=IfCondition(lab),
-            output='screen',
-        ),
-
-        # Node 5: Navigator — at home uses /sim/*, at lab uses real topics
-        Node(
-            package='farm_twin_poc',
-            executable='navigator_node',
-            name='navigator_node',
-            parameters=[{
-                'scan_topic':        '/sim/scan',
-                'odom_topic':        '/sim/odom',
-                'battery_topic':     '/battery_state',
-                'max_linear':        0.15,
-                'max_angular':       0.6,
-                'goal_tolerance':    0.25,
-                'obstacle_distance': 0.40,
-                'front_angle_deg':   45.0,
-            }],
-            condition=UnlessCondition(lab),
-            output='screen',
-        ),
-        Node(
-            package='farm_twin_poc',
-            executable='navigator_node',
-            name='navigator_node',
-            parameters=[{
-                'scan_topic':        '/scan',
-                'odom_topic':        '/odom',
-                'battery_topic':     '/battery_state',
-                'max_linear':        0.15,
-                'max_angular':       0.6,
-                'goal_tolerance':    0.25,
-                'obstacle_distance': 0.40,
-                'front_angle_deg':   45.0,
             }],
             condition=IfCondition(lab),
             output='screen',
