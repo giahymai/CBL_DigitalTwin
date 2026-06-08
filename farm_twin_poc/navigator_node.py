@@ -73,9 +73,9 @@ from tf2_ros import LookupException, ConnectivityException, ExtrapolationExcepti
 # way to the first red.
 WAYPOINTS = [
     {'name': 'spray_zone_A',     'x': 0.5, 'y': 2.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
-    {'name': 'spray_zone_C',     'x': 3.5, 'y': 2.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
-    {'name': 'fertilize_zone_D', 'x': 0.5, 'y': 0.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
-    {'name': 'fertilize_zone_B', 'x': 3.5, 'y': 0.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
+    {'name': 'fertilize_zone_B', 'x': 3.5, 'y': 2.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
+    {'name': 'fertilize_zone_D', 'x': 3.5, 'y': 0.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
+    {'name': 'spray_zone_C',     'x': 0.5, 'y': 0.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
 ]
 
 
