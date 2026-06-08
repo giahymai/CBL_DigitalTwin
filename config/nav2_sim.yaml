@@ -41,14 +41,14 @@ amcl:
     z_short: 0.05
     scan_topic: scan
     map_topic: map
-    # Self-seed at the spawn pose (0,0) so AMCL starts localised without relying
-    # on a manual "2D Pose Estimate" or the navigator's retry loop.
+    # Self-seed at the spawn pose (3,3) — matches gazebo_twin.launch.py and the
+    # real robot start position at the lab, so at-home and at-lab look identical.
     set_initial_pose: true
     always_reset_initial_pose: false
     first_map_only: false
     initial_pose:
-      x: 0.0
-      y: 0.0
+      x: 3.0
+      y: 3.0
       z: 0.0
       yaw: 0.0
 

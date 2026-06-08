@@ -90,8 +90,8 @@ def generate_launch_description():
         # the Gazebo zone markers and the Nav2 goals. Mirrors the lab convention
         # "zones are metres from robot start". Spawning elsewhere (e.g. 3,3)
         # offsets /odom from the map and zone_monitor never fires /farm_action.
-        DeclareLaunchArgument('x_pose', default_value='0'),
-        DeclareLaunchArgument('y_pose', default_value='0'),
+        DeclareLaunchArgument('x_pose', default_value='3'),
+        DeclareLaunchArgument('y_pose', default_value='3'),
         DeclareLaunchArgument(
             'headless', default_value='false',
             description='true = Gazebo server only (no GUI); use on GPU-less '
