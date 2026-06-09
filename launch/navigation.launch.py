@@ -21,21 +21,28 @@ def generate_launch_description():
     Robot bringup (ros2 launch turtlebot3_bringup robot.launch.py) must already
     be running over SSH, and ROS_DOMAIN_ID must match the robot.
 
-    USAGE (real robot, lab):
-      ros2 launch farm_twin_poc navigation.launch.py \
-          map:=~/map.yaml home_x:=0.0 home_y:=0.0
+    AMCL auto-seeds at home_x/home_y (default 3.0, 3.0) — place the robot at
+    that position and RViz2 will show the correct location immediately, no
+    "2D Pose Estimate" click required. If the robot is placed elsewhere, pass
+    home_x:=X home_y:=Y on the command line; the AMCL seed follows home_x/y.
 
-    Then in RViz click "2D Pose Estimate" at the robot's REAL location
-    (set_initial_pose stays false on the real robot), wait for "Nav2 is active":
+    USAGE (real robot, lab):
+      ros2 launch farm_twin_poc navigation.launch.py map:=~/map.yaml
+
+    Wait for "Nav2 is active", then:
       ros2 service call /start_navigation std_srvs/srv/Trigger
+
+    Override start/home position if robot is not at (3, 3):
+      ros2 launch farm_twin_poc navigation.launch.py \
+          map:=~/map.yaml home_x:=X home_y:=Y
 
     ARGS:
       map                     path to SLAM lab map yaml      (default: ~/map.yaml)
       params_file             Nav2 params yaml               (default: nav2_lab.yaml)
       use_sim_time            false on real robot            (default: false)
-      home_x, home_y, home_yaw  robot start pose to return to (default: 0,0,0)
+      home_x, home_y, home_yaw  robot start pose + AMCL seed (default: 3.0, 3.0, 0.0)
       return_battery_percent  low-battery return threshold % (default: 20)
-      set_initial_pose        seed AMCL automatically        (default: false → use RViz)
+      set_initial_pose        seed AMCL via Nav2 API         (default: true)
     """
     pkg_nav2  = get_package_share_directory('turtlebot3_navigation2')
     pkg_share = get_package_share_directory('farm_twin_poc')
@@ -54,11 +61,13 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('map', default_value=os.path.expanduser('~/map.yaml')),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
-        DeclareLaunchArgument('home_x', default_value='0.0'),
-        DeclareLaunchArgument('home_y', default_value='0.0'),
+        # Default start position matches the fixed robot placement and Gazebo spawn.
+        # AMCL seeds at this position so RViz2 shows the correct location on startup.
+        DeclareLaunchArgument('home_x', default_value='3.0'),
+        DeclareLaunchArgument('home_y', default_value='3.0'),
         DeclareLaunchArgument('home_yaw', default_value='0.0'),
         DeclareLaunchArgument('return_battery_percent', default_value='20.0'),
-        DeclareLaunchArgument('set_initial_pose', default_value='false'),
+        DeclareLaunchArgument('set_initial_pose', default_value='true'),
         DeclareLaunchArgument('params_file', default_value=default_params,
                               description='Nav2 params yaml (default: nav2_lab.yaml)'),
 

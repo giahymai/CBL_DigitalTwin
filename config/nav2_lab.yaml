@@ -42,7 +42,19 @@ amcl:
     z_short: 0.05
     scan_topic: scan
     map_topic: map
-    set_initial_pose: false   # user sets pose via RViz2 "2D Pose Estimate"
+    # Auto-seed at (3, 3) — the fixed robot start position for this lab setup.
+    # always_reset_initial_pose:true prevents AMCL from loading a stale cached
+    # pose from a previous run, which is what caused RViz2 to show the robot at
+    # the wrong location at startup. If the robot is placed at a different
+    # physical position, override home_x/home_y in the navigation.launch.py
+    # command and click "2D Pose Estimate" in RViz2.
+    set_initial_pose: true
+    always_reset_initial_pose: true
+    initial_pose:
+      x: 3.0
+      y: 3.0
+      z: 0.0
+      yaw: 0.0
 
 bt_navigator:
   ros__parameters:

@@ -161,10 +161,11 @@ def generate_launch_description():
             parameters=[{
                 'odom_topic':       '/odom',
                 'battery_topic':    '/battery_state',
-                # AMCL self-seeds at (0,0) via nav2_sim.yaml (set_initial_pose),
-                # so the navigator does not need to re-seed (that retry loop
-                # spammed "Setting initial pose" + transform-timeout warnings).
-                'set_initial_pose': False,
+                # Programmatically seed AMCL at the spawn pose via the Nav2
+                # API after Nav2 is active — backup to nav2_sim.yaml's
+                # always_reset_initial_pose:true, ensures correct starting
+                # position even when Gazebo clock jitter delays AMCL init.
+                'set_initial_pose': True,
                 'home_x':           3.0,     # = spawn; return_home comes back here
                 'home_y':           3.0,
                 'home_yaw':         0.0,

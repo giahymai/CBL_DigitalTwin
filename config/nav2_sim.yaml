@@ -41,11 +41,16 @@ amcl:
     z_short: 0.05
     scan_topic: scan
     map_topic: map
-    # Self-seed at the spawn pose (0,0) so AMCL starts localised without relying
-    # on a manual "2D Pose Estimate" or the navigator's retry loop.
+    # Self-seed at spawn (3,3). always_reset_initial_pose:true forces AMCL to
+    # use this value every launch instead of any cached/saved pose from a
+    # previous run, which is what caused the robot to appear at the wrong
+    # position in RViz2 at startup. recovery_alpha values let AMCL inject
+    # random particles and recover from localisation drift (abort fix).
     set_initial_pose: true
-    always_reset_initial_pose: false
+    always_reset_initial_pose: true
     first_map_only: false
+    recovery_alpha_fast: 0.1
+    recovery_alpha_slow: 0.001
     initial_pose:
       x: 3.0
       y: 3.0

@@ -637,41 +637,40 @@ need `~/map.yaml` (B3) and updated zone coordinates (B9).
 > **Do NOT run `farm_twin.launch.py` at the same time as this.** Both stacks
 > publish to `/cmd_vel` and will fight each other — the robot will behave erratically.
 
+**Place the robot at position (3, 3) in the map frame** (the fixed start position
+that matches the Gazebo spawn). AMCL seeds there automatically — no "2D Pose
+Estimate" click required.
+
 **Terminal — Nav2 + navigator + zone monitor + DT logger** — SETUP BLOCK, then:
 ```bash
-ros2 launch farm_twin_poc navigation.launch.py \
-    map:=~/map.yaml home_x:=0.0 home_y:=0.0
+ros2 launch farm_twin_poc navigation.launch.py map:=~/map.yaml
 ```
 
-Replace `home_x/home_y` with the robot's real start coordinates (see B9 — how to
-read these values after AMCL localizes).
+If the robot is placed at a **different** position (not (3, 3)):
+```bash
+ros2 launch farm_twin_poc navigation.launch.py map:=~/map.yaml home_x:=X home_y:=Y
+```
 
-> **Nav2 params:** `navigation.launch.py` now uses `config/nav2_lab.yaml` by default.
-> This file is tuned for the real robot: AMCL global recovery (re-localizes after
-> dynamic obstacles scatter the particle cloud), `transform_tolerance: 1.0` (buffers
-> WiFi latency on the `base_scan` TF), and `collision_monitor source_timeout: 3.0`
-> (tolerates brief scan drops without stopping the robot). These reduce mid-navigation
-> aborts compared to the stock turtlebot3 params. Override with `params_file:=...`
-> if you need a different config.
+> **Nav2 params:** `navigation.launch.py` uses `config/nav2_lab.yaml` by default.
+> This file is tuned for the real robot: AMCL auto-seeds at (3, 3) and resets on
+> every launch (`always_reset_initial_pose: true`), global recovery alphas let AMCL
+> re-localize after mid-navigation drift, `transform_tolerance: 1.0` buffers WiFi
+> latency, and `collision_monitor source_timeout: 3.0` tolerates brief scan drops.
+> Override with `params_file:=...` if you need a different config.
 
 RViz2 will open automatically once Nav2 finishes starting. **If RViz2 does not
 appear**, it means Nav2 timed out — almost always because `/scan` is not arriving
 (check B2) or `~/map.yaml` does not exist (check B3).
 
-### Setting the initial pose in RViz2 (required)
+### Verifying localization in RViz2
 
-AMCL needs to know where the robot is before it can localize. After RViz2 opens:
+After RViz2 opens, enable the **LaserScan** display in the left panel and check
+that the red/yellow LiDAR lines align with the map walls. If they are aligned,
+AMCL has localized correctly — no action needed.
 
-1. Look at the **toolbar** at the top of RViz2
-2. Click **"2D Pose Estimate"**
-3. On the map, **click on the robot's actual position** in the room
-4. **Hold and drag** in the direction the robot is facing, then release
-
-You will see a cluster of green arrows (AMCL particles) appear around that point.
-Wait a few seconds for the particles to converge. Then verify localization is
-correct: enable the **LaserScan** display in the left panel and check that the
-red/yellow LiDAR lines align with the map walls. If they are offset, redo the
-pose estimate more precisely.
+If the LiDAR lines are **offset from the walls**, AMCL drifted or the robot was
+not placed at (3, 3). Fix by clicking **"2D Pose Estimate"** in the RViz2 toolbar,
+clicking the robot's actual position on the map, and dragging in its heading direction.
 
 Wait for the log to show **"Nav2 is active"**, then — in a new laptop terminal
 (SETUP BLOCK first):
@@ -684,16 +683,15 @@ ros2 service call /start_navigation std_srvs/srv/Trigger
 If `/start_navigation` returns `aborted`, or the robot aborts **mid-navigation**,
 the most likely causes are:
 
-1. **Zone coordinates not updated** — `WAYPOINTS` still has Gazebo sim coords,
+1. **Zone coordinates not updated** — `WAYPOINTS` still has wrong coords,
    Nav2 tries to reach a point that is inside a wall or outside the map. Fix: do B9.
-2. **AMCL not localized** — "2D Pose Estimate" not clicked, or clicked at the
-   wrong position. Redo the pose estimate.
+2. **AMCL mislocalized** — LiDAR lines offset from map walls. Click "2D Pose
+   Estimate" in RViz2 at the robot's actual position, then call `/start_navigation` again.
 3. **Nav2 not active yet** — call `/nav_status` to check the state.
-4. **Mid-navigation abort** (lab) — WiFi scan drop or dynamic obstacle scattered
-   the AMCL particle cloud → `map→odom` TF drifted → DWB controller could not find
-   a valid path → Nav2 BT aborted. `nav2_lab.yaml` reduces this with AMCL global
-   recovery and relaxed timeouts, but it can still happen. Fix: redo "2D Pose
-   Estimate" in RViz2, then call `/start_navigation` again.
+4. **Mid-navigation abort** (lab) — WiFi scan drop scattered the AMCL particle
+   cloud → `map→odom` TF drifted → DWB controller failed. AMCL recovery alphas
+   reduce this, but it can still happen. Fix: verify LiDAR alignment in RViz2,
+   then call `/start_navigation` again. Do **not** restart the whole launch.
 
 ### Why the robot moves slowly or does not follow the planned path
 
@@ -704,7 +702,7 @@ constantly adjusts to avoid obstacles and correct for localization drift.
 
 If the robot moves very erratically or takes a completely wrong route:
 - Open LaserScan in RViz2 and check alignment with map walls
-- If walls are offset → AMCL is drifting → redo "2D Pose Estimate"
+- If walls are offset → AMCL is drifting → click "2D Pose Estimate"
 - There is **no conflict** between Nav2 and other nodes in this stack —
   `navigation.launch.py` does not run `twin_safety_node`
 
@@ -725,13 +723,16 @@ ros2 service call /stop_navigation std_srvs/srv/Trigger
 ## B5b. Viewing Gazebo twin alongside Nav2 (optional, for demo)
 
 To show **both** Gazebo (Digital Twin visual) and RViz2 (Nav2 map) at the same
-time during the lab session — like the at-home demo — run these in addition to
-`navigation.launch.py`:
+time during the lab session — demonstrating Goal ② state synchronisation live —
+run these in addition to `navigation.launch.py`:
 
 **Extra Terminal A — Gazebo twin world** — SETUP BLOCK, then:
 ```bash
 ros2 launch farm_twin_poc gazebo_twin.launch.py
 ```
+
+The Gazebo twin spawns at (3, 3), matching the real robot's start position, so
+both robots start at the same map coordinates.
 
 **Extra Terminal B — Mirror real robot commands into Gazebo twin** — SETUP BLOCK, then:
 ```bash
@@ -740,7 +741,8 @@ ros2 run topic_tools relay /cmd_vel /sim/cmd_vel
 
 `relay` copies every `/cmd_vel` message (published by Nav2 to drive the real
 robot) onto `/sim/cmd_vel` in real time, so the Gazebo robot moves in sync with
-the physical robot. This is the state synchronisation (Goal ②) made visible.
+the physical robot. RViz2 (map + path) and Gazebo (3D twin) now show the same
+robot navigating the same path simultaneously — this is Goal ② made visible.
 
 > Do **not** run `farm_twin.launch.py` alongside this — `twin_safety_node` also
 > publishes to `/cmd_vel` and would conflict with Nav2.
@@ -763,9 +765,9 @@ ros2 topic echo /navigator/status
 # Shows: state=... | current=... | battery=85% | completed=[...]
 ```
 
-The home position is set by the `home_x` / `home_y` / `home_yaw` launch args of
-`navigation.launch.py` (lab) / `gazebo_nav2_demo.launch.py` (home). Set them to
-the robot's real start pose, or it will return to the wrong spot.
+The home position defaults to **(3, 3)** — the fixed robot start position. Both
+`navigation.launch.py` (lab) and `gazebo_nav2_demo.launch.py` (home) use this
+default. Override with `home_x:=X home_y:=Y` if the robot starts elsewhere.
 
 > **At home (Gazebo):** `/battery_state` may not publish → battery monitoring
 > inactive. Use `/return_home` manually, or fake a low battery to test:
@@ -827,23 +829,30 @@ ros2 service call /nav_status       std_srvs/srv/Trigger
 
 ## B9. Measure and update zone positions
 
-Zone coordinates must be in the **map frame** (not the odom frame). After AMCL
-has localized (LaserScan aligned with map walls), use `/amcl_pose` — not `/odom`
-— to read positions.
+Zone coordinates must be in the **map frame** (not the odom frame). AMCL must be
+running and the LaserScan must be aligned with the map walls before reading.
+Use `/amcl_pose` — not `/odom` — to read positions.
 
 Do this **once** when setting up the lab. If zone markers don't move between
-sessions, the values stay valid.
+sessions, the values stay valid. The current code already has valid values for
+the zone layout described in the Farm Zones section — only redo this if you
+physically move the zone markers.
 
-### Step 1 — Read home position
+### Step 1 — Verify the home position
 
-Place the robot at its designated start position. After clicking "2D Pose
-Estimate" in RViz2 and verifying LaserScan alignment:
+The default home position is **(3, 3)** in the map frame. Place the robot at
+that physical location (the matching spot in the real lab room). Launch
+`navigation.launch.py` (B5) and verify that the LaserScan lines align with the
+map walls in RViz2 — if they do, no action is needed for the home position.
+
+If for some reason the robot cannot be placed at (3, 3), place it elsewhere
+and read the actual map position after AMCL converges:
 
 ```bash
 ros2 topic echo /amcl_pose --once | grep -A5 "position"
 ```
 
-Note the `x` and `y` — these are `home_x` and `home_y` for the launch command.
+Pass the result as `home_x:=X home_y:=Y` to the launch command (see B5).
 
 ### Step 2 — Read each zone position
 
@@ -906,18 +915,19 @@ cd ~/turtlebot3_ws/src/farm_twin_poc
 git add farm_twin_poc/zone_monitor_node.py \
         farm_twin_poc/navigator_node.py \
         worlds/lab_world.sdf
-git commit -m "Update zone and home coordinates for real lab room"
+git commit -m "Update zone coordinates for real lab room"
 git push
 
 cd ~/turtlebot3_ws
 colcon build --packages-select farm_twin_poc && source install/setup.bash
 ```
 
-### Step 5 — Launch navigation with correct home position
+### Step 5 — Launch navigation
 
 ```bash
-ros2 launch farm_twin_poc navigation.launch.py \
-    map:=~/map.yaml home_x:=<home_x> home_y:=<home_y>
+ros2 launch farm_twin_poc navigation.launch.py map:=~/map.yaml
+# Robot placed at (3, 3): no home_x/y override needed.
+# Robot placed elsewhere: add home_x:=X home_y:=Y
 ```
 
 ---
@@ -948,27 +958,27 @@ most common cause of Nav2 timeout and RViz2 not opening.
 terminal. If not → robot bringup not running or wrong `ROS_DOMAIN_ID`.
 
 **Map is blank in RViz2 / "frame 'map' does not exist":**
-AMCL has not published the `map → odom` transform yet. Click **"2D Pose Estimate"**
-in RViz2 at the robot's actual position. Everything waiting on the `map` frame
-(costmap, Nav2 controller) will unblock immediately after.
+AMCL has not published the `map → odom` transform yet. AMCL auto-seeds at (3, 3)
+so this usually resolves within a few seconds. If it persists: verify the robot is
+placed at (3, 3) in the room, check LaserScan alignment, and if still wrong click
+**"2D Pose Estimate"** in RViz2 at the robot's actual position.
 
 **Robot moves erratically / does not follow the Nav2 path:**
 AMCL localization is drifting. Enable **LaserScan** in RViz2 and check that the
-LiDAR lines align with the map walls. If offset, redo "2D Pose Estimate" more
-carefully. This is not a node conflict — `navigation.launch.py` does not run
-`twin_safety_node`.
+LiDAR lines align with the map walls. If offset, click "2D Pose Estimate" in RViz2.
+This is not a node conflict — `navigation.launch.py` does not run `twin_safety_node`.
 
 **Robot aborts mid-navigation and disappears from RViz2 (lab):**
 Chain reaction: WiFi scan drop → local costmap clears → DWB controller fails →
 Nav2 BT aborts goal → AMCL stops receiving scan → `map→odom` TF expires → robot
-disappears. `nav2_lab.yaml` (used by default) reduces this via AMCL global recovery,
-`transform_tolerance: 1.0`, and `source_timeout: 3.0`. If it still occurs: redo
-"2D Pose Estimate" in RViz2, wait for LaserScan to realign with walls, then call
-`/start_navigation` again. Do **not** restart the whole launch — Nav2 is still running.
+disappears. `nav2_lab.yaml` reduces this via AMCL global recovery,
+`transform_tolerance: 1.0`, and `source_timeout: 3.0`. If it still occurs: verify
+LaserScan alignment in RViz2 (click "2D Pose Estimate" if walls are offset), then
+call `/start_navigation` again. Do **not** restart the whole launch — Nav2 is still running.
 
 **`/start_navigation` returns "aborted":**
-- Zone coordinates (`WAYPOINTS`) still have Gazebo sim values → do B9.
-- Or AMCL not localized → redo "2D Pose Estimate".
+- Zone coordinates (`WAYPOINTS`) still have wrong values → do B9.
+- Or AMCL mislocalized → check LaserScan alignment, click "2D Pose Estimate" if offset.
 - Or Nav2 not active yet → check `ros2 service call /nav_status std_srvs/srv/Trigger`.
 
 **"Message Filter dropping message / queue is full" in RViz2:**
