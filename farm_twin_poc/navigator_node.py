@@ -67,15 +67,14 @@ from tf2_ros import LookupException, ConnectivityException, ExtrapolationExcepti
 
 # Aligned with FARM_ZONES in zone_monitor_node.py. yaw is the heading the robot
 # should face on arrival (radians); it does not affect zone detection.
-# Spray (red) zones first, then fertilize (green). Sprays sit on the bottom row
-# (y=0.7, near spawn) and fertilizes on the top row (y=2.7), so the robot does
-# all sprays before driving up to the greens — and never crosses a green on the
-# way to the first red.
+# Spray (red) zones on the top row (y=2.7), fertilize (green) on the bottom row
+# (y=0.7). Robot spawns top-left (3,3): visits C (top-left, near spawn) → A
+# (top-right) → D (bottom-right, directly below A) → B (bottom-left).
 WAYPOINTS = [
-    {'name': 'spray_zone_A',     'x': 0.5, 'y': 0.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
-    {'name': 'spray_zone_C',     'x': 3.5, 'y': 0.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
-    {'name': 'fertilize_zone_B', 'x': 3.5, 'y': 2.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
-    {'name': 'fertilize_zone_D', 'x': 0.5, 'y': 2.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
+    {'name': 'spray_zone_C',     'x': 3.5, 'y': 2.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
+    {'name': 'spray_zone_A',     'x': 0.5, 'y': 2.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
+    {'name': 'fertilize_zone_D', 'x': 0.5, 'y': 0.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
+    {'name': 'fertilize_zone_B', 'x': 3.5, 'y': 0.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
 ]
 
 

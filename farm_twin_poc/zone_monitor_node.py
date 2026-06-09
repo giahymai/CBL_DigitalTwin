@@ -32,13 +32,13 @@ from tf2_ros import Buffer, TransformListener
 from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
 
 FARM_ZONES = [
-    {'name': 'spray_zone_A',     'x':  0.5, 'y':  0.7, 'radius': 0.35, 'action': 'spray',
+    {'name': 'spray_zone_A',     'x':  0.5, 'y':  2.7, 'radius': 0.35, 'action': 'spray',
      'description': 'Striga-infested zone — targeted herbicide spray'},
-    {'name': 'fertilize_zone_B', 'x':  3.5, 'y':  2.7, 'radius': 0.35, 'action': 'fertilize',
+    {'name': 'fertilize_zone_B', 'x':  3.5, 'y':  0.7, 'radius': 0.35, 'action': 'fertilize',
      'description': 'Low-NPK zone — variable-rate fertilizer application'},
-    {'name': 'spray_zone_C',     'x':  3.5, 'y':  0.7, 'radius': 0.35, 'action': 'spray',
+    {'name': 'spray_zone_C',     'x':  3.5, 'y':  2.7, 'radius': 0.35, 'action': 'spray',
      'description': 'Striga-infested zone — targeted herbicide spray'},
-    {'name': 'fertilize_zone_D', 'x':  0.5, 'y':  2.7, 'radius': 0.35, 'action': 'fertilize',
+    {'name': 'fertilize_zone_D', 'x':  0.5, 'y':  0.7, 'radius': 0.35, 'action': 'fertilize',
      'description': 'Low-NPK zone — variable-rate fertilizer application'},
 ]
 

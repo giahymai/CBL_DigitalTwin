@@ -84,14 +84,12 @@ def generate_launch_description():
         DeclareLaunchArgument('map', default_value=default_map),
         DeclareLaunchArgument('params_file', default_value=default_params),
         DeclareLaunchArgument('world', default_value=default_world),
-        # Spawn at the WORLD ORIGIN (0,0). This makes odom == map == world: the
-        # robot's /odom (origin = spawn) coincides with the map frame, so the
-        # FARM_ZONES coords in zone_monitor_node (which reads /odom) line up with
-        # the Gazebo zone markers and the Nav2 goals. Mirrors the lab convention
-        # "zones are metres from robot start". Spawning elsewhere (e.g. 3,3)
-        # offsets /odom from the map and zone_monitor never fires /farm_action.
-        DeclareLaunchArgument('x_pose', default_value='0'),
-        DeclareLaunchArgument('y_pose', default_value='0'),
+        # Spawn at (3,3): top-left area of the Gazebo room, consistent with
+        # gazebo_twin.launch.py. zone_monitor uses position_source:=tf (map frame
+        # via AMCL), so zone detection is independent of the odom origin.
+        # AMCL is seeded at (3,3) via nav2_sim.yaml initial_pose so odom+map align.
+        DeclareLaunchArgument('x_pose', default_value='3'),
+        DeclareLaunchArgument('y_pose', default_value='3'),
         DeclareLaunchArgument(
             'headless', default_value='false',
             description='true = Gazebo server only (no GUI); use on GPU-less '
@@ -167,8 +165,8 @@ def generate_launch_description():
                 # so the navigator does not need to re-seed (that retry loop
                 # spammed "Setting initial pose" + transform-timeout warnings).
                 'set_initial_pose': False,
-                'home_x':           0.0,     # = spawn; return_home comes back here
-                'home_y':           0.0,
+                'home_x':           3.0,     # = spawn; return_home comes back here
+                'home_y':           3.0,
                 'home_yaw':         0.0,
                 'use_sim_time':     use_sim_time,
             }],

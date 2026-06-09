@@ -187,10 +187,16 @@ farm_twin_poc/
 ## Farm Zones
 
 4 predefined zones marked as **flat colored discs** (radius 0.35 m) in Gazebo.
-Spray (red) zones are on the bottom row (near the robot start) and fertilize
-(green) on the top row, so the tour does all sprays first, then fertilizes:
 - **Red** = spray zones (Striga herbicide) — visited first
 - **Green** = fertilize zones (NPK application) — visited second
+
+Layout (Gazebo top-down view — robot spawns top-left at `(3, 3)`):
+```
+TOP-LEFT  spray_zone_C   (3.5, 2.7) [red]    spray_zone_A   (0.5, 2.7) [red]    TOP-RIGHT
+BOTTOM-LEFT fertilize_zone_B (3.5, 0.7) [green]  fertilize_zone_D (0.5, 0.7) [green]  BOTTOM-RIGHT
+                                                                             ★ (0,0)
+```
+Tour order: C (top-left, near spawn) → A (top-right) → D (bottom-right) → B (bottom-left).
 
 > Discs are deliberately flat (~2 cm tall) and visual-only. An earlier version
 > used raised spheres, but in gz-sim the LiDAR raytraces against **visual**
