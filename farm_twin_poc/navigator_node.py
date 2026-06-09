@@ -105,7 +105,14 @@ class NavigatorNode(Node):
         # commanding /cmd_vel (yaw-tracked) rather than Nav2's spin behaviour,
         # which aborts near walls when its collision look-ahead trips on the
         # inflation layer (zones sit close to walls).
-        self.declare_parameter('spin_speed',     1.2)        # rad/s (faster spray/fertilize spin)
+        # rad/s. Kept SLOW on purpose. The TB3 LiDAR sweeps at 5 Hz (0.2 s per
+        # scan), so the faster the robot spins, the more the robot rotates DURING
+        # one sweep and the more each scan is smeared (motion distortion). At the
+        # old 1.2 rad/s that was ~14 deg of motion per scan, which distorts the
+        # ranges and makes AMCL/costmap "mix up" the readings while spinning. At
+        # 0.4 rad/s it is ~4.6 deg/scan, so localization stays clean through the
+        # spray/fertilize spin. _spin_action scales its timeout to this speed.
+        self.declare_parameter('spin_speed',     0.4)        # rad/s
         self.declare_parameter('spin_cmd_topic', '/cmd_vel')
         # Arrival handling (map frame). We let Nav2 drive the robot close to the
         # zone CENTRE rather than bailing out the moment we touch the trigger
@@ -356,8 +363,14 @@ class NavigatorNode(Node):
         accumulated = 0.0
         last_yaw    = self._yaw
         t0          = time.monotonic()
+        # Wall-clock safety ceiling. Scale it with the spin speed so a SLOW spin
+        # still has time to finish a full revolution: nominal rotation time is
+        # target/spin_speed, and on the GPU-less sim wall-clock runs well ahead
+        # of sim-time, so give 4x slack + 10 s. (The loop normally exits as soon
+        # as the odom yaw has accumulated a full turn; this only guards a stall.)
+        spin_timeout = (target / max(0.1, self._spin_speed)) * 4.0 + 10.0
         while accumulated < target and not self._cancel_requested:
-            if time.monotonic() - t0 > 25.0:          # safety timeout
+            if time.monotonic() - t0 > spin_timeout:  # safety timeout
                 self.get_logger().warn('[SPIN] timeout')
                 break
             accumulated += abs(self._wrap(self._yaw - last_yaw))
