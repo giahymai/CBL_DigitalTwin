@@ -162,10 +162,16 @@ def generate_launch_description():
             parameters=[{
                 'odom_topic':       '/odom',
                 'battery_topic':    '/battery_state',
-                # AMCL self-seeds at (3,3) via nav2_sim.yaml (set_initial_pose),
-                # so the navigator does not need to re-seed (that retry loop
-                # spammed "Setting initial pose" + transform-timeout warnings).
-                'set_initial_pose': False,
+                # MUST be True. nav2_simple_commander's waitUntilNav2Active()
+                # internally calls _waitForInitialPose(), which loops publishing
+                # BasicNavigator.initial_pose on /initialpose until AMCL
+                # responds. With set_initial_pose:=False that pose is the
+                # default-constructed (0,0,0), silently overwriting AMCL's
+                # nav2_sim.yaml seed at (3,3) — the robot ends up localised at
+                # the wrong spot and Nav2 plans from (0,0). True makes the
+                # navigator pre-load (home_x, home_y) so the same loop
+                # publishes the correct (3,3) pose.
+                'set_initial_pose': True,
                 'home_x':           3.0,     # = spawn (3,3); return_home comes back here
                 'home_y':           3.0,
                 'home_yaw':         0.0,
