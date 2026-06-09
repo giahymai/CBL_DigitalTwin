@@ -15,10 +15,10 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch_ros.actions import Node, PushRosNamespace
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -52,25 +52,23 @@ def generate_launch_description():
     )
 
 
+    x_pose = LaunchConfiguration('x_pose')
+    y_pose = LaunchConfiguration('y_pose')
+
     spawn_robot = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(launch_file_dir, 'spawn_turtlebot3.launch.py')),
-        launch_arguments={'x_pose': '3', 'y_pose': '3'}.items()
+        launch_arguments={'x_pose': x_pose, 'y_pose': y_pose}.items()
     )
 
-    #spawn_robot = Node(
-    #   package='ros_gz_sim',
-    #   executable='create',
-    #   arguments=[
-    #       '-topic', '/sim/robot_description',
-    #       '-name', 'turtlebot3',
-    #       '-x', '3',
-    #       '-y', '3',
-    #       '-z', '0.1'
-    #   ],
-    #   output='screen'
-    #)
-
     return LaunchDescription([
+        # At home: keep defaults (3, 3) — middle of the Gazebo room.
+        # At lab: pass the robot's real starting map-frame coords so the twin
+        # spawns at the same location as the physical robot.
+        #   ros2 launch farm_twin_poc gazebo_twin.launch.py x_pose:=<home_x> y_pose:=<home_y>
+        DeclareLaunchArgument('x_pose', default_value='3',
+                              description='Gazebo twin spawn x (map-frame). At lab: use home_x from amcl_pose.'),
+        DeclareLaunchArgument('y_pose', default_value='3',
+                              description='Gazebo twin spawn y (map-frame). At lab: use home_y from amcl_pose.'),
         PushRosNamespace('sim'),
         gazebo,
         spawn_robot,

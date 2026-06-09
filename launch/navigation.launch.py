@@ -31,20 +31,25 @@ def generate_launch_description():
 
     ARGS:
       map                     path to SLAM lab map yaml      (default: ~/map.yaml)
+      params_file             Nav2 params yaml               (default: nav2_lab.yaml)
       use_sim_time            false on real robot            (default: false)
       home_x, home_y, home_yaw  robot start pose to return to (default: 0,0,0)
       return_battery_percent  low-battery return threshold % (default: 20)
       set_initial_pose        seed AMCL automatically        (default: false → use RViz)
     """
-    pkg_nav2 = get_package_share_directory('turtlebot3_navigation2')
+    pkg_nav2  = get_package_share_directory('turtlebot3_navigation2')
+    pkg_share = get_package_share_directory('farm_twin_poc')
 
-    use_sim_time = LaunchConfiguration('use_sim_time')
-    map_yaml     = LaunchConfiguration('map')
-    home_x       = LaunchConfiguration('home_x')
-    home_y       = LaunchConfiguration('home_y')
-    home_yaw     = LaunchConfiguration('home_yaw')
-    ret_batt     = LaunchConfiguration('return_battery_percent')
-    set_pose     = LaunchConfiguration('set_initial_pose')
+    use_sim_time  = LaunchConfiguration('use_sim_time')
+    map_yaml      = LaunchConfiguration('map')
+    home_x        = LaunchConfiguration('home_x')
+    home_y        = LaunchConfiguration('home_y')
+    home_yaw      = LaunchConfiguration('home_yaw')
+    ret_batt      = LaunchConfiguration('return_battery_percent')
+    set_pose      = LaunchConfiguration('set_initial_pose')
+    nav2_params   = LaunchConfiguration('params_file')
+
+    default_params = os.path.join(pkg_share, 'config', 'nav2_lab.yaml')
 
     return LaunchDescription([
         DeclareLaunchArgument('map', default_value=os.path.expanduser('~/map.yaml')),
@@ -54,8 +59,10 @@ def generate_launch_description():
         DeclareLaunchArgument('home_yaw', default_value='0.0'),
         DeclareLaunchArgument('return_battery_percent', default_value='20.0'),
         DeclareLaunchArgument('set_initial_pose', default_value='false'),
+        DeclareLaunchArgument('params_file', default_value=default_params,
+                              description='Nav2 params yaml (default: nav2_lab.yaml)'),
 
-        # 1) Nav2 + AMCL with the lab map.
+        # 1) Nav2 + AMCL with lab-tuned params.
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(pkg_nav2, 'launch', 'navigation2.launch.py')
@@ -63,6 +70,7 @@ def generate_launch_description():
             launch_arguments={
                 'map':          map_yaml,
                 'use_sim_time': use_sim_time,
+                'params_file':  nav2_params,
             }.items(),
         ),
 
