@@ -84,12 +84,11 @@ def generate_launch_description():
         DeclareLaunchArgument('map', default_value=default_map),
         DeclareLaunchArgument('params_file', default_value=default_params),
         DeclareLaunchArgument('world', default_value=default_world),
-        # Spawn at the WORLD ORIGIN (0,0). This makes odom == map == world: the
-        # robot's /odom (origin = spawn) coincides with the map frame, so the
-        # FARM_ZONES coords in zone_monitor_node (which reads /odom) line up with
-        # the Gazebo zone markers and the Nav2 goals. Mirrors the lab convention
-        # "zones are metres from robot start". Spawning elsewhere (e.g. 3,3)
-        # offsets /odom from the map and zone_monitor never fires /farm_action.
+        # Spawn at (3, 3) — matches the lab session and the AMCL seed in
+        # nav2_sim.yaml (initial_pose x:3.0 y:3.0). zone_monitor uses TF
+        # (map->base_link), NOT /odom, so the odom-frame offset from spawn does
+        # not affect zone detection; AMCL corrects the map->odom transform so
+        # the robot's map-frame position matches the tile coordinates exactly.
         DeclareLaunchArgument('x_pose', default_value='3'),
         DeclareLaunchArgument('y_pose', default_value='3'),
         DeclareLaunchArgument(
@@ -163,12 +162,12 @@ def generate_launch_description():
             parameters=[{
                 'odom_topic':       '/odom',
                 'battery_topic':    '/battery_state',
-                # AMCL self-seeds at (0,0) via nav2_sim.yaml (set_initial_pose),
+                # AMCL self-seeds at (3,3) via nav2_sim.yaml (set_initial_pose),
                 # so the navigator does not need to re-seed (that retry loop
                 # spammed "Setting initial pose" + transform-timeout warnings).
                 'set_initial_pose': False,
-                'home_x':           0.0,     # = spawn; return_home comes back here
-                'home_y':           0.0,
+                'home_x':           3.0,     # = spawn (3,3); return_home comes back here
+                'home_y':           3.0,
                 'home_yaw':         0.0,
                 'use_sim_time':     use_sim_time,
             }],

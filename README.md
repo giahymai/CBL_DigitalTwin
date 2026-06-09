@@ -187,10 +187,11 @@ farm_twin_poc/
 ## Farm Zones
 
 4 predefined zones marked as **flat colored discs** (radius 0.35 m) in Gazebo.
-Spray (red) zones are on the bottom row (near the robot start) and fertilize
-(green) on the top row, so the tour does all sprays first, then fertilizes:
-- **Red** = spray zones (Striga herbicide) — visited first
-- **Green** = fertilize zones (NPK application) — visited second
+The robot spawns at (3, 3); the top row (y=2.7) is near the spawn, the bottom
+row (y=0.7) is farther away. The tour follows an S-curve: top-left spray →
+top-right fertilize → bottom-right fertilize → bottom-left spray.
+- **Red** = spray zones (Striga herbicide) — top-left and bottom-left
+- **Green** = fertilize zones (NPK application) — top-right and bottom-right
 
 > Discs are deliberately flat (~2 cm tall) and visual-only. An earlier version
 > used raised spheres, but in gz-sim the LiDAR raytraces against **visual**
@@ -222,9 +223,10 @@ This is a common point of confusion. There are two completely different map sour
   so the Gazebo walls and the Nav2 map match each other exactly
 
 **At home (Gazebo):**
-- Robot spawns at world `(0, 0)` — the point in the SDF that corresponds to where
-  the robot was standing when the original SLAM scan was made
-- Visually this appears at a specific corner of the Gazebo room
+- Robot spawns at world `(3, 3)` — AMCL is seeded at map `(3, 3)` automatically
+  via `config/nav2_sim.yaml` so no manual "2D Pose Estimate" click is required
+- The navigator's `home_x/home_y` is also `(3, 3)`, so `/return_home` brings
+  the robot back to the correct spawn location
 
 **At lab (real robot):**
 - The map frame `(0, 0)` is the same physical spot — where SLAM was originally run
@@ -372,8 +374,9 @@ tree is clean (`map -> odom -> base_link`) and Nav2 works.
 
 **No map needed at home** — the package ships `maps/lab_map.yaml`, generated
 from `lab_world.sdf` via `scripts/world_to_map.py`, so the Gazebo walls and the
-Nav2 map match exactly. The robot spawns at the world origin (0, 0) so that
-`/odom` lines up with the map frame and the farm zones trigger correctly.
+Nav2 map match exactly. The robot spawns at `(3, 3)` and AMCL is seeded there
+automatically; `zone_monitor_node` uses TF (`map→base_link`) so zone detection
+works correctly regardless of the `/odom` frame origin.
 
 **Single terminal — everything (Gazebo + Nav2 + nodes):**
 ```bash
@@ -402,9 +405,9 @@ ros2 launch farm_twin_poc gazebo_nav2_demo.launch.py headless:=true
 > colcon build --packages-select farm_twin_poc && source install/setup.bash
 > ```
 
-Wait until the log shows **"Nav2 is active"**. By default this demo seeds the
-initial pose automatically (`set_initial_pose:=true`); if it didn't, click
-**"2D Pose Estimate"** in RViz at the robot spawn (0, 0). Then:
+Wait until the log shows **"Nav2 is active"**. AMCL seeds the initial pose
+automatically at `(3, 3)` via `config/nav2_sim.yaml`; if localization looks
+wrong in RViz, click **"2D Pose Estimate"** at the robot spawn `(3, 3)`. Then:
 ```bash
 ros2 service call /start_navigation std_srvs/srv/Trigger
 ```
