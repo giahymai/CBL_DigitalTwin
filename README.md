@@ -149,8 +149,8 @@ The PoC has two run-time stacks that demonstrate different goals:
 > **One navigator only:** `nav2_navigator` (executable `nav2_navigator`, file
 > `navigator_node.py`) uses the **Nav2 Simple Commander** — Nav2 plans the path
 > to each zone and handles obstacle avoidance. Used by `navigation.launch.py`
-> (lab — needs your real SLAM map `~/map.yaml`) and `gazebo_nav2_demo.launch.py`
-> (home — uses the bundled `maps/lab_map.yaml`, no SLAM needed). It also does
+> (lab — uses the bundled `maps/lab_map.yaml`) and `gazebo_nav2_demo.launch.py`
+> (home — same bundled map). It also does
 > auto return-home on low battery.
 
 ---
@@ -490,9 +490,8 @@ the run will fail:
 
 - [ ] **Built & sourced** on the lab laptop (B1), `ros2 pkg executables farm_twin_poc` lists all nodes.
 - [ ] **Robot bringup running** (B2) and `ros2 topic hz /scan` ≈ 10 Hz from the laptop.
-- [ ] **Map available**: the bundled `maps/lab_map.yaml` is a real SLAM scan of
-      the lab room — copy it to `~/map.yaml` before launching (B3). If the room
-      layout has changed since that scan, redo SLAM to get a fresh map.
+- [ ] **Map ready**: the bundled `maps/lab_map.yaml` is used automatically — no copy
+      needed. If the room layout has changed since that scan, redo SLAM (B3).
 - [ ] **Zone coordinates measured and updated** in `FARM_ZONES`, `WAYPOINTS`, and
       `lab_world.sdf` (B9), and `home_x/home_y` set to the robot's real start pose.
       Do this once per lab setup; if zones don't move between sessions, reuse the values.
@@ -552,16 +551,11 @@ ros2 topic hz /scan    # must show ~10 Hz → robot + ROS_DOMAIN_ID are correct
 
 ---
 
-## B3. Prepare the map
+## B3. Map
 
 The bundled `maps/lab_map.yaml` is a **real SLAM scan of the lab room** — it is
-ready to use directly. Copy it to the home directory so `navigation.launch.py`
-finds it at the default path:
-
-```bash
-cp ~/turtlebot3_ws/install/farm_twin_poc/share/farm_twin_poc/maps/lab_map.yaml ~/map.yaml
-cp ~/turtlebot3_ws/install/farm_twin_poc/share/farm_twin_poc/maps/lab_map.pgm ~/map.pgm
-```
+used automatically by `navigation.launch.py` with no extra steps. **No `cp` or
+`~/map.yaml` needed.**
 
 > **If the room layout has changed** (walls moved, large furniture added/removed)
 > since the bundled map was made, redo SLAM to get a fresh map:
@@ -578,12 +572,12 @@ cp ~/turtlebot3_ws/install/farm_twin_poc/share/farm_twin_poc/maps/lab_map.pgm ~/
 >
 > **Terminal 4 — Save map** — SETUP BLOCK, then:
 > ```bash
-> ros2 run nav2_map_server map_saver_cli -f ~/map --ros-args -p map_topic:=/map
+> ros2 run nav2_map_server map_saver_cli -f ~/new_map --ros-args -p map_topic:=/map
 > ```
 > Then commit the new map to the repo so it becomes the new bundled map:
 > ```bash
-> cp ~/map.yaml ~/turtlebot3_ws/src/farm_twin_poc/maps/lab_map.yaml
-> cp ~/map.pgm  ~/turtlebot3_ws/src/farm_twin_poc/maps/lab_map.pgm
+> cp ~/new_map.yaml ~/turtlebot3_ws/src/farm_twin_poc/maps/lab_map.yaml
+> cp ~/new_map.pgm  ~/turtlebot3_ws/src/farm_twin_poc/maps/lab_map.pgm
 > cd ~/turtlebot3_ws/src/farm_twin_poc
 > git add maps/ && git commit -m "Update SLAM map" && git push
 > colcon build --packages-select farm_twin_poc && source install/setup.bash
@@ -632,7 +626,7 @@ and sensor data flows up while commands flow down (①).
 ## B5. Nav2 autonomous navigation at lab (planned path) → proves Goal ③B
 
 This is a **separate run** from B4. Robot bringup (B2) must be running and you
-need `~/map.yaml` (B3) and updated zone coordinates (B9).
+need updated zone coordinates (B9).
 
 > **Do NOT run `farm_twin.launch.py` at the same time as this.** Both stacks
 > publish to `/cmd_vel` and will fight each other — the robot will behave erratically.
@@ -643,12 +637,13 @@ Estimate" click required.
 
 **Terminal — Nav2 + navigator + zone monitor + DT logger** — SETUP BLOCK, then:
 ```bash
-ros2 launch farm_twin_poc navigation.launch.py map:=~/map.yaml
+ros2 launch farm_twin_poc navigation.launch.py
 ```
 
-If the robot is placed at a **different** position (not (3, 3)):
+The bundled `maps/lab_map.yaml` is used automatically. If the robot is placed at a
+**different** position (not (3, 3)):
 ```bash
-ros2 launch farm_twin_poc navigation.launch.py map:=~/map.yaml home_x:=X home_y:=Y
+ros2 launch farm_twin_poc navigation.launch.py home_x:=X home_y:=Y
 ```
 
 > **Nav2 params:** `navigation.launch.py` uses `config/nav2_lab.yaml` by default.
@@ -660,7 +655,7 @@ ros2 launch farm_twin_poc navigation.launch.py map:=~/map.yaml home_x:=X home_y:
 
 RViz2 will open automatically once Nav2 finishes starting. **If RViz2 does not
 appear**, it means Nav2 timed out — almost always because `/scan` is not arriving
-(check B2) or `~/map.yaml` does not exist (check B3).
+(check B2).
 
 ### Verifying localization in RViz2
 
@@ -925,8 +920,8 @@ colcon build --packages-select farm_twin_poc && source install/setup.bash
 ### Step 5 — Launch navigation
 
 ```bash
-ros2 launch farm_twin_poc navigation.launch.py map:=~/map.yaml
-# Robot placed at (3, 3): no home_x/y override needed.
+ros2 launch farm_twin_poc navigation.launch.py
+# Robot placed at (3, 3): no args needed.
 # Robot placed elsewhere: add home_x:=X home_y:=Y
 ```
 

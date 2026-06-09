@@ -26,23 +26,26 @@ def generate_launch_description():
     "2D Pose Estimate" click required. If the robot is placed elsewhere, pass
     home_x:=X home_y:=Y on the command line; the AMCL seed follows home_x/y.
 
+    The bundled maps/lab_map.yaml (real SLAM scan of the lab) is used by default —
+    no map copy or ~/map.yaml needed. Override with map:=<path> only if you have
+    a newer SLAM scan.
+
     USAGE (real robot, lab):
-      ros2 launch farm_twin_poc navigation.launch.py map:=~/map.yaml
+      ros2 launch farm_twin_poc navigation.launch.py
 
     Wait for "Nav2 is active", then:
       ros2 service call /start_navigation std_srvs/srv/Trigger
 
     Override start/home position if robot is not at (3, 3):
-      ros2 launch farm_twin_poc navigation.launch.py \
-          map:=~/map.yaml home_x:=X home_y:=Y
+      ros2 launch farm_twin_poc navigation.launch.py home_x:=X home_y:=Y
 
     ARGS:
-      map                     path to SLAM lab map yaml      (default: ~/map.yaml)
-      params_file             Nav2 params yaml               (default: nav2_lab.yaml)
-      use_sim_time            false on real robot            (default: false)
+      map                     path to map yaml  (default: bundled maps/lab_map.yaml)
+      params_file             Nav2 params yaml  (default: nav2_lab.yaml)
+      use_sim_time            false on real robot (default: false)
       home_x, home_y, home_yaw  robot start pose + AMCL seed (default: 3.0, 3.0, 0.0)
       return_battery_percent  low-battery return threshold % (default: 20)
-      set_initial_pose        seed AMCL via Nav2 API         (default: true)
+      set_initial_pose        seed AMCL via Nav2 API (default: true)
     """
     pkg_nav2  = get_package_share_directory('turtlebot3_navigation2')
     pkg_share = get_package_share_directory('farm_twin_poc')
@@ -56,10 +59,11 @@ def generate_launch_description():
     set_pose      = LaunchConfiguration('set_initial_pose')
     nav2_params   = LaunchConfiguration('params_file')
 
+    default_map    = os.path.join(pkg_share, 'maps', 'lab_map.yaml')
     default_params = os.path.join(pkg_share, 'config', 'nav2_lab.yaml')
 
     return LaunchDescription([
-        DeclareLaunchArgument('map', default_value=os.path.expanduser('~/map.yaml')),
+        DeclareLaunchArgument('map', default_value=default_map),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         # Default start position matches the fixed robot placement and Gazebo spawn.
         # AMCL seeds at this position so RViz2 shows the correct location on startup.
