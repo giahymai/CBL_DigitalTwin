@@ -89,7 +89,11 @@ bt_navigator:
 
 controller_server:
   ros__parameters:
-    controller_frequency: 10.0
+    # Real robot over WiFi: lower frequency gives more time for cmd_vel to
+    # reach the robot and take effect before the next correction is sent.
+    # 10 Hz caused oscillation because corrections arrived faster than the
+    # robot could execute them (WiFi ~100-200 ms round-trip latency).
+    controller_frequency: 5.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
@@ -104,29 +108,33 @@ controller_server:
     goal_checker:
       stateful: true
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.15
-      yaw_goal_tolerance: 0.25
+      xy_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.5
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: true
       min_vel_x: 0.0
       min_vel_y: 0.0
-      max_vel_x: 0.22
+      max_vel_x: 0.18
       max_vel_y: 0.0
-      max_vel_theta: 1.0
+      # Slower rotation: RotateToGoal at max_vel_theta=1.0 overshoot on real
+      # robot (motor inertia + WiFi delay) causing the left-right lurch.
+      max_vel_theta: 0.6
       min_speed_xy: 0.0
-      max_speed_xy: 0.22
+      max_speed_xy: 0.18
       min_speed_theta: 0.0
-      acc_lim_x: 2.5
+      acc_lim_x: 2.0
       acc_lim_y: 0.0
-      acc_lim_theta: 3.2
-      decel_lim_x: -2.5
+      acc_lim_theta: 2.0
+      decel_lim_x: -2.0
       decel_lim_y: 0.0
-      decel_lim_theta: -3.2
-      vx_samples: 20
+      decel_lim_theta: -2.0
+      vx_samples: 15
       vy_samples: 0
-      vtheta_samples: 40
-      sim_time: 1.5
+      vtheta_samples: 20
+      # Longer sim_time: DWB evaluates trajectories further ahead, picks
+      # smoother arcs instead of sharp corrections.
+      sim_time: 2.0
       linear_granularity: 0.05
       angular_granularity: 0.025
       transform_tolerance: 1.0
@@ -142,7 +150,9 @@ controller_server:
       GoalAlign.forward_point_distance: 0.1
       PathDist.scale: 32.0
       GoalDist.scale: 24.0
-      RotateToGoal.scale: 32.0
+      # Lower RotateToGoal scale: reduces aggressive in-place rotation at
+      # waypoints which was the main cause of left-right lurching.
+      RotateToGoal.scale: 20.0
       RotateToGoal.slowing_factor: 5.0
       RotateToGoal.lookahead_time: -1.0
     enable_stamped_cmd_vel: true
@@ -286,7 +296,10 @@ collision_monitor:
     base_frame_id: "base_footprint"
     odom_frame_id: "odom"
     cmd_vel_in_topic: "cmd_vel_smoothed"
-    cmd_vel_out_topic: "cmd_vel"
+    # Route through twin_safety_node (not directly to /cmd_vel) so that
+    # obstacles detected by the Gazebo twin's /sim/scan also stop the real
+    # robot. twin_safety_node republishes to /cmd_vel + /sim/cmd_vel.
+    cmd_vel_out_topic: "cmd_vel_nav_out"
     state_topic: "collision_monitor_state"
     transform_tolerance: 1.0
     # 3 s covers brief WiFi scan drops without stopping the robot unnecessarily.

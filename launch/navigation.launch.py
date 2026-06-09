@@ -13,8 +13,10 @@ def generate_launch_description():
     Requires a map.yaml produced by SLAM (see README B3).
 
     This brings up, in ONE command:
-      - Nav2 (turtlebot3_navigation2) with your lab map + AMCL
-      - nav2_navigator   (drives zones in sequence, auto return-home on low battery)
+      - Gazebo Digital Twin  (visual 3D mirror of the real robot)
+      - Nav2 (turtlebot3_navigation2) with lab map + AMCL + RViz2
+      - twin_safety_node  (bidirectional safety: real+sim LiDAR → both robots stop)
+      - nav2_navigator    (drives zones in sequence, auto return-home on low battery)
       - zone_monitor_node (fires /farm_action at each zone)
       - dt_logger_node    (Digital Entity log + /dt/status)
 
@@ -75,7 +77,22 @@ def generate_launch_description():
         DeclareLaunchArgument('params_file', default_value=default_params,
                               description='Nav2 params yaml (default: nav2_lab.yaml)'),
 
-        # 1) Nav2 + AMCL with lab-tuned params.
+        # 1) Gazebo Digital Twin — visual mirror of the real robot.
+        # Spawns at home_x/home_y so the twin starts at the same map position
+        # as the physical robot. twin_safety_node (below) relays Nav2 commands
+        # to /sim/cmd_vel so the twin moves in sync, and checks /sim/scan for
+        # bidirectional obstacle safety.
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(pkg_share, 'launch', 'gazebo_twin.launch.py')
+            ),
+            launch_arguments={
+                'x_pose': home_x,
+                'y_pose': home_y,
+            }.items(),
+        ),
+
+        # 2) Nav2 + AMCL with lab-tuned params.
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(pkg_nav2, 'launch', 'navigation2.launch.py')
@@ -87,7 +104,31 @@ def generate_launch_description():
             }.items(),
         ),
 
-        # 2) Nav2 navigator (zones in sequence + return-home).
+        # 2) Twin Safety Node — sits between Nav2 and the robots.
+        # Nav2 outputs to /cmd_vel_nav_out; twin_safety_node checks /scan
+        # (real robot LiDAR) AND /sim/scan (Gazebo twin LiDAR) and publishes
+        # a safe command to BOTH /cmd_vel (real robot) and /sim/cmd_vel (twin).
+        # If EITHER robot detects a close obstacle the other also stops —
+        # this is bidirectional Goal ② safety for the autonomous Nav2 stack.
+        # When the Gazebo twin is not running /sim/scan is empty so
+        # sim_blocked stays False and commands pass through unchanged.
+        Node(
+            package='farm_twin_poc',
+            executable='twin_safety_node',
+            name='twin_safety_node',
+            output='screen',
+            parameters=[{
+                'real_scan_topic':  '/scan',
+                'sim_scan_topic':   '/sim/scan',
+                'input_cmd_topic':  '/cmd_vel_nav_out',
+                'real_cmd_topic':   '/cmd_vel',
+                'sim_cmd_topic':    '/sim/cmd_vel',
+                'stop_distance':    0.25,
+                'front_angle_deg':  30.0,
+            }],
+        ),
+
+        # 3) Nav2 navigator (zones in sequence + return-home).
         Node(
             package='farm_twin_poc',
             executable='nav2_navigator',
@@ -101,6 +142,9 @@ def generate_launch_description():
                 'home_y':                 home_y,
                 'home_yaw':               home_yaw,
                 'set_initial_pose':       set_pose,
+                # Spin command also routed through twin_safety_node so the
+                # Gazebo twin mirrors the 360° spray/fertilize spin.
+                'spin_cmd_topic':         '/cmd_vel_nav_out',
                 'use_sim_time':           use_sim_time,
             }],
         ),

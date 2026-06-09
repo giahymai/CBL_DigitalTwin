@@ -715,32 +715,33 @@ ros2 service call /stop_navigation std_srvs/srv/Trigger
 
 ---
 
-## B5b. Viewing Gazebo twin alongside Nav2 (optional, for demo)
+## B5b. Gazebo twin + RViz2 (included automatically)
 
-To show **both** Gazebo (Digital Twin visual) and RViz2 (Nav2 map) at the same
-time during the lab session — demonstrating Goal ② state synchronisation live —
-run these in addition to `navigation.launch.py`:
+`navigation.launch.py` already starts **both Gazebo and RViz2** — no extra
+terminals needed. One command brings up the full lab stack:
 
-**Extra Terminal A — Gazebo twin world** — SETUP BLOCK, then:
-```bash
-ros2 launch farm_twin_poc gazebo_twin.launch.py
+```
+Gazebo Digital Twin  ←─── lab_world.sdf, spawns at (home_x, home_y)
+RViz2                ←─── Nav2 map + robot + path
+Nav2 + AMCL          ←─── controls real robot
+twin_safety_node     ←─── bidirectional safety (real + sim LiDAR)
+zone_monitor + DT logger
 ```
 
-The Gazebo twin spawns at (3, 3), matching the real robot's start position, so
-both robots start at the same map coordinates.
+Synchronisation is wired automatically:
 
-**Extra Terminal B — Mirror real robot commands into Gazebo twin** — SETUP BLOCK, then:
-```bash
-ros2 run topic_tools relay /cmd_vel /sim/cmd_vel
+```
+Nav2 → /cmd_vel_nav_out → twin_safety_node ┬→ /cmd_vel     → real robot
+                              checks         └→ /sim/cmd_vel → Gazebo twin
+                          /scan + /sim/scan
 ```
 
-`relay` copies every `/cmd_vel` message (published by Nav2 to drive the real
-robot) onto `/sim/cmd_vel` in real time, so the Gazebo robot moves in sync with
-the physical robot. RViz2 (map + path) and Gazebo (3D twin) now show the same
-robot navigating the same path simultaneously — this is Goal ② made visible.
+**Bidirectional safety (Goal ②):** if an obstacle appears in front of **either**
+robot (real LiDAR `/scan` OR Gazebo LiDAR `/sim/scan`), `twin_safety_node`
+blocks forward motion on **both** — real robot and Gazebo twin stop together.
 
-> Do **not** run `farm_twin.launch.py` alongside this — `twin_safety_node` also
-> publishes to `/cmd_vel` and would conflict with Nav2.
+> Do **not** run `farm_twin.launch.py` or `gazebo_twin.launch.py` separately
+> alongside this — they would start duplicate nodes and conflict.
 
 ---
 
