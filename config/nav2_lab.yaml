@@ -296,10 +296,11 @@ collision_monitor:
     base_frame_id: "base_footprint"
     odom_frame_id: "odom"
     cmd_vel_in_topic: "cmd_vel_smoothed"
-    # Route through twin_safety_node (not directly to /cmd_vel) so that
-    # obstacles detected by the Gazebo twin's /sim/scan also stop the real
-    # robot. twin_safety_node republishes to /cmd_vel + /sim/cmd_vel.
-    cmd_vel_out_topic: "cmd_vel_nav_out"
+    # Publish straight to /cmd_vel (the real robot) — same command path as the
+    # at-home stack (gazebo_nav2_demo + nav2_sim.yaml). No twin_safety_node sits
+    # in the autonomous loop, so Nav2 + this collision_monitor are the only
+    # things steering/stopping the robot and motion stays smooth (no lurching).
+    cmd_vel_out_topic: "cmd_vel"
     state_topic: "collision_monitor_state"
     transform_tolerance: 1.0
     # 3 s covers brief WiFi scan drops without stopping the robot unnecessarily.

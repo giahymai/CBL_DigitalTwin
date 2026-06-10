@@ -15,10 +15,19 @@ def generate_launch_description():
     This brings up, in ONE command:
       - Gazebo Digital Twin  (visual 3D mirror of the real robot)
       - Nav2 (turtlebot3_navigation2) with lab map + AMCL + RViz2
-      - twin_safety_node  (bidirectional safety: real+sim LiDAR → both robots stop)
+      - twin_pose_sync_node (pins the Gazebo twin to the real robot's AMCL pose)
       - nav2_navigator    (drives zones in sequence, auto return-home on low battery)
       - zone_monitor_node (fires /farm_action at each zone)
       - dt_logger_node    (Digital Entity log + /dt/status)
+
+    Command path is IDENTICAL to the at-home demo (gazebo_nav2_demo.launch.py):
+    Nav2 publishes straight to /cmd_vel (collision_monitor is the only safety in
+    the loop). So the robot moves at the lab exactly as smoothly as it does at
+    home. The Gazebo twin is a passive visual shadow, kept in lock-step by
+    twin_pose_sync_node (teleport to the real robot's localized pose) — it never
+    gates the robot's command, so it cannot make the robot lurch. The reflex
+    safety stop + bidirectional twin safety (Goal ②) are demonstrated by the
+    separate TELEOP stack (farm_twin.launch.py, README B4), not here.
 
     Robot bringup (ros2 launch turtlebot3_bringup robot.launch.py) must already
     be running over SSH, and ROS_DOMAIN_ID must match the robot.
@@ -85,9 +94,9 @@ def generate_launch_description():
 
         # 1) Gazebo Digital Twin — visual mirror of the real robot.
         # Spawns at home_x/home_y so the twin starts at the same map position
-        # as the physical robot. twin_safety_node (below) relays Nav2 commands
-        # to /sim/cmd_vel so the twin moves in sync, and checks /sim/scan for
-        # bidirectional obstacle safety.
+        # as the physical robot. It is then kept in lock-step by
+        # twin_pose_sync_node (below), which teleports it to the real robot's
+        # localized pose every tick — a faithful visual shadow in Gazebo + RViz.
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(pkg_share, 'launch', 'gazebo_twin.launch.py')
@@ -110,36 +119,24 @@ def generate_launch_description():
             }.items(),
         ),
 
-        # 2) Twin Safety Node — sits between Nav2 and the robots.
-        # Nav2 outputs to /cmd_vel_nav_out; twin_safety_node checks /scan
-        # (real robot LiDAR) AND /sim/scan (Gazebo twin LiDAR) and publishes
-        # a safe command to BOTH /cmd_vel (real robot) and /sim/cmd_vel (twin).
-        # If EITHER robot detects a close obstacle the other also stops —
-        # this is bidirectional Goal ② safety for the autonomous Nav2 stack.
-        # When the Gazebo twin is not running /sim/scan is empty so
-        # sim_blocked stays False and commands pass through unchanged.
-        Node(
-            package='farm_twin_poc',
-            executable='twin_safety_node',
-            name='twin_safety_node',
-            output='screen',
-            parameters=[{
-                'real_scan_topic':  '/scan',
-                'sim_scan_topic':   '/sim/scan',
-                'input_cmd_topic':  '/cmd_vel_nav_out',
-                'real_cmd_topic':   '/cmd_vel',
-                'sim_cmd_topic':    '/sim/cmd_vel',
-                'stop_distance':    0.25,
-                'front_angle_deg':  30.0,
-            }],
-        ),
+        # NOTE: No twin_safety_node here, on purpose. Nav2 already plans around
+        # obstacles (costmap from /scan) and replans when a new one appears, and
+        # collision_monitor (PolygonStop, nav2_lab.yaml) is the last-resort
+        # emergency stop. Inserting twin_safety_node's reflex (cut forward / keep
+        # rotation when something is < 0.25 m in the front arc) into the Nav2
+        # command path made the real robot lurch left/right whenever Nav2 drove
+        # it near a wall or zone — and differed from the at-home stack. Reflex +
+        # bidirectional twin safety (Goal ②) live in the TELEOP stack instead
+        # (farm_twin.launch.py, README B4). collision_monitor therefore publishes
+        # straight to /cmd_vel (cmd_vel_out_topic: cmd_vel in nav2_lab.yaml).
 
-        # 2c) Twin Pose Sync — pin the Gazebo twin to the real robot's localized
-        # pose (TF map->base_link) so it never drifts. Without this the open-loop
-        # twin drifts into walls, its /sim/scan reports phantom obstacles, and
-        # twin_safety_node stops the real robot's forward motion (allowing only
-        # rotation) -> the robot lurches in place. Pinning keeps /sim/scan honest
-        # so bidirectional safety stays meaningful AND the robot drives smoothly.
+        # 2b) Twin Pose Sync — pin the Gazebo twin to the real robot's localized
+        # pose (TF map->base_link) so it stays a faithful VISUAL shadow. The twin
+        # no longer receives any /sim/cmd_vel (nothing mirrors Nav2's command to
+        # it now), so teleporting it to the real robot's AMCL pose every tick is
+        # what keeps Gazebo + RViz showing the robot where it actually is. This
+        # node only moves the Gazebo model; it never touches /cmd_vel, so it can
+        # never make the robot lurch.
         Node(
             package='farm_twin_poc',
             executable='twin_pose_sync_node',
@@ -169,9 +166,10 @@ def generate_launch_description():
                 'home_y':                 home_y,
                 'home_yaw':               home_yaw,
                 'set_initial_pose':       set_pose,
-                # Spin command also routed through twin_safety_node so the
-                # Gazebo twin mirrors the 360° spray/fertilize spin.
-                'spin_cmd_topic':         '/cmd_vel_nav_out',
+                # The 360° spray/fertilize spin goes straight to /cmd_vel, same
+                # as the at-home demo. twin_pose_sync teleports the Gazebo twin
+                # so it visibly spins too.
+                'spin_cmd_topic':         '/cmd_vel',
                 'use_sim_time':           use_sim_time,
             }],
         ),

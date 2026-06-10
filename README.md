@@ -651,7 +651,13 @@ ros2 launch farm_twin_poc navigation.launch.py home_x:=X home_y:=Y
 > every launch (`always_reset_initial_pose: true`), global recovery alphas let AMCL
 > re-localize after mid-navigation drift, `transform_tolerance: 1.0` buffers WiFi
 > latency, and `collision_monitor source_timeout: 3.0` tolerates brief scan drops.
-> Override with `params_file:=...` if you need a different config.
+> **For smooth motion over WiFi** it also lowers `controller_frequency` to 5 Hz
+> (corrections no longer arrive faster than the robot can execute them), caps
+> `max_vel_theta` at 0.6 rad/s and softens `RotateToGoal` (these stop the
+> left-right lurch from over-aggressive in-place turns), and lengthens DWB
+> `sim_time` to 2.0 s so it picks smoother arcs. Together with Nav2 driving
+> `/cmd_vel` directly (no reflex node in the loop) this is what makes the real
+> robot move as smoothly as the sim. Override with `params_file:=...` if needed.
 
 RViz2 will open automatically once Nav2 finishes starting. **If RViz2 does not
 appear**, it means Nav2 timed out — almost always because `/scan` is not arriving
@@ -723,36 +729,41 @@ terminals needed. One command brings up the full lab stack:
 ```
 Gazebo Digital Twin  ←─── lab_world.sdf, spawns at (home_x, home_y)
 RViz2                ←─── Nav2 map + robot + path
-Nav2 + AMCL          ←─── controls real robot
-twin_safety_node     ←─── bidirectional safety (real + sim LiDAR)
+Nav2 + AMCL          ←─── controls the real robot
+twin_pose_sync_node  ←─── pins the Gazebo twin to the real robot's pose
 zone_monitor + DT logger
 ```
 
-Synchronisation is wired automatically:
+The command path is **identical to the at-home demo** (`gazebo_nav2_demo.launch.py`):
 
 ```
-Nav2 → /cmd_vel_nav_out → twin_safety_node ┬→ /cmd_vel     → real robot
-                              checks         └→ /sim/cmd_vel → Gazebo twin
-                          /scan + /sim/scan
+Nav2 (controller → velocity_smoother → collision_monitor) → /cmd_vel → real robot
 ```
 
-**Bidirectional safety (Goal ②):** if an obstacle appears in front of **either**
-robot (real LiDAR `/scan` OR Gazebo LiDAR `/sim/scan`), `twin_safety_node`
-blocks forward motion on **both** — real robot and Gazebo twin stop together.
+Nav2 drives the robot directly. `collision_monitor` is the only safety in the
+loop — exactly as at home — so **the robot moves at the lab as smoothly as it
+does in the sim.**
 
-> **Twin Pose Sync (keeps the twin from "lurching").** The Gazebo twin is driven
-> open-loop by the mirrored `/sim/cmd_vel`, so it slowly drifts away from the
-> real robot (slip + WiFi delay + AMCL corrections the twin never gets). A
-> drifted twin would "see" walls on `/sim/scan` where the real robot has none,
-> and `twin_safety_node` would then stop the real robot's forward motion (while
-> still allowing rotation) — the robot lurches left/right in place. To prevent
-> this, `navigation.launch.py` runs **`twin_pose_sync_node`**: every tick it
-> reads the real robot's localized pose (TF `map->base_link` from AMCL) and
-> teleports the Gazebo twin to that exact pose via the `gz` `set_pose` service.
-> The twin stays a faithful shadow, `/sim/scan` reflects reality, and
-> bidirectional safety stays meaningful **without** phantom stops.
->
-> If the spin/teleport does nothing, the gz model name differs from the default
+**State synchronisation (Goal ②) — the Gazebo twin as a live shadow.**
+`twin_pose_sync_node` reads the real robot's localized pose (TF `map->base_link`
+from AMCL) every tick and teleports the Gazebo twin to that exact pose via the
+`gz` `set_pose` service. So Gazebo + RViz always show the twin where the real
+robot actually is. This is a *passive* mirror: it only moves the Gazebo model,
+it **never** publishes `/cmd_vel`, so it can never make the real robot lurch.
+
+> **Why no `twin_safety_node` in this stack (this is deliberate).** Earlier the
+> Nav2 command was routed through `twin_safety_node` to add a "bidirectional"
+> reflex stop. But Nav2 **already** avoids obstacles — its costmap reads `/scan`
+> and the planner replans around anything new, with `collision_monitor` as the
+> emergency stop. The extra reflex only did harm: whenever Nav2 legitimately
+> drove the robot near a wall or a zone, the front-arc reading dropped below
+> 0.25 m, the reflex cut forward motion but kept rotation, and the robot
+> **lurched left/right in place** ("ngáo") even though Nav2 had drawn a clean
+> path. Removing it from the autonomous loop is what makes the lab run smooth.
+> The reflex safety stop and the bidirectional real+sim LiDAR safety (Goal ②)
+> are still demonstrated — in the **teleop** twin stack (B4), where they belong.
+
+> If the twin teleport does nothing, the gz model name differs from the default
 > (`turtlebot3_burger`). Check `gz model --list` and pass it:
 > `ros2 launch farm_twin_poc navigation.launch.py twin_entity:=<name>`
 
