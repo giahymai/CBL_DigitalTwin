@@ -169,6 +169,10 @@ def generate_launch_description():
                 'home_x':           3.0,     # = spawn; return_home comes back here
                 'home_y':           3.0,
                 'home_yaw':         0.0,
+                # Stop & dwell at each zone (no 360° spin), same as the lab so
+                # home and lab behave identically. Set to 'spin' if you want the
+                # visible rotation as eye-candy in the sim demo.
+                'zone_signal':      'pause',
                 'use_sim_time':     use_sim_time,
             }],
         ),

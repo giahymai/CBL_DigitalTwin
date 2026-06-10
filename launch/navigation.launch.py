@@ -166,9 +166,13 @@ def generate_launch_description():
                 'home_y':                 home_y,
                 'home_yaw':               home_yaw,
                 'set_initial_pose':       set_pose,
-                # The 360° spray/fertilize spin goes straight to /cmd_vel, same
-                # as the at-home demo. twin_pose_sync teleports the Gazebo twin
-                # so it visibly spins too.
+                # At each zone the robot just STOPS and dwells a couple of
+                # seconds — the logged /farm_action is the proof, and holding
+                # still keeps the real robot's localization steady (an in-place
+                # 360° spin is the worst maneuver for odometry/LiDAR). Switch to
+                # 'spin' only for a demo gesture; the spin goes straight to
+                # /cmd_vel and twin_pose_sync makes the Gazebo twin mirror it.
+                'zone_signal':            'pause',
                 'spin_cmd_topic':         '/cmd_vel',
                 'use_sim_time':           use_sim_time,
             }],

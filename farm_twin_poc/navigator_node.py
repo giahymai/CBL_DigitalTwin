@@ -71,10 +71,10 @@ from tf2_ros import LookupException, ConnectivityException, ExtrapolationExcepti
 # (y=0.7). Robot spawns top-left (3,3): visits C (top-left, near spawn) → A
 # (top-right) → D (bottom-right, directly below A) → B (bottom-left).
 WAYPOINTS = [
-    {'name': 'spray_zone_C',     'x': 3.5, 'y': 2.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
-    {'name': 'spray_zone_A',     'x': 0.5, 'y': 2.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
-    {'name': 'fertilize_zone_D', 'x': 0.5, 'y': 0.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
-    {'name': 'fertilize_zone_B', 'x': 3.5, 'y': 0.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
+    {'name': 'spray_zone_C',     'x': 3.5, 'y': 2.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.5},
+    {'name': 'spray_zone_A',     'x': 0.5, 'y': 2.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.5},
+    {'name': 'fertilize_zone_D', 'x': 0.5, 'y': 0.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.5},
+    {'name': 'fertilize_zone_B', 'x': 3.5, 'y': 0.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.5},
 ]
 
 
@@ -101,17 +101,24 @@ class NavigatorNode(Node):
         self.declare_parameter('home_x',   3.0)
         self.declare_parameter('home_y',   3.0)
         self.declare_parameter('home_yaw', 0.0)
-        # Spray/fertilize signal: rotate in place at each zone. Done by directly
-        # commanding /cmd_vel (yaw-tracked) rather than Nav2's spin behaviour,
-        # which aborts near walls when its collision look-ahead trips on the
-        # inflation layer (zones sit close to walls).
-        # rad/s. Kept SLOW on purpose. The TB3 LiDAR sweeps at 5 Hz (0.2 s per
-        # scan), so the faster the robot spins, the more the robot rotates DURING
-        # one sweep and the more each scan is smeared (motion distortion). At the
-        # old 1.2 rad/s that was ~14 deg of motion per scan, which distorts the
-        # ranges and makes AMCL/costmap "mix up" the readings while spinning. At
-        # 0.4 rad/s it is ~4.6 deg/scan, so localization stays clean through the
-        # spray/fertilize spin. _spin_action scales its timeout to this speed.
+        # Spray/fertilize arrival signal. zone_monitor_node fires /farm_action on
+        # ENTRY and that timestamped event is the real proof an action happened,
+        # so the robot does NOT need to do anything fancy at a zone.
+        #   'pause' (default) — stop and dwell a couple of seconds. This is the
+        #       SAFE choice, especially on the real robot: an in-place 360° spin
+        #       is the worst maneuver for a diff-drive base (max wheel-slip
+        #       odometry error) and smears the LiDAR (motion distortion), right
+        #       before the robot must localize and drive to the next zone.
+        #   'spin'            — rotate ~360° in place. Visible eye-candy for the
+        #       sim demo; not recommended on the real robot.
+        self.declare_parameter('zone_signal',  'pause')      # 'pause' | 'spin'
+        self.declare_parameter('zone_dwell_s', 2.5)          # s, when 'pause'
+        # spin_speed (rad/s) is used ONLY when zone_signal='spin'. Kept SLOW: the
+        # TB3 LiDAR sweeps at ~5 Hz, so a fast spin rotates a lot DURING one scan
+        # and smears it. At 0.4 rad/s it is ~4.6 deg/scan, so localization stays
+        # clean. Done by commanding /cmd_vel directly (yaw-tracked), not Nav2's
+        # spin behaviour (which aborts near walls). _spin_action scales its
+        # timeout to this speed.
         self.declare_parameter('spin_speed',     0.4)        # rad/s
         self.declare_parameter('spin_cmd_topic', '/cmd_vel')
         # Arrival handling (map frame). We let Nav2 drive the robot close to the
@@ -136,6 +143,8 @@ class NavigatorNode(Node):
         self._home_y         = float(gp('home_y').value)
         self._home_yaw       = float(gp('home_yaw').value)
         self._spin_speed     = float(gp('spin_speed').value)
+        self._zone_signal    = gp('zone_signal').value
+        self._zone_dwell_s   = float(gp('zone_dwell_s').value)
         self._arrival_radius = float(gp('arrival_radius').value)
         self._stuck_time     = float(gp('stuck_time').value)
         self._stuck_move     = float(gp('stuck_move').value)
@@ -176,6 +185,10 @@ class NavigatorNode(Node):
         for wp in WAYPOINTS:
             self.get_logger().info(f'  {wp["action"].upper():<11} {wp["name"]} at ({wp["x"]}, {wp["y"]})')
         self.get_logger().info(f'Return-home battery threshold: {self._low_thresh:.0f}%')
+        signal = (f'spin ~360° at {self._spin_speed:.1f} rad/s'
+                  if self._zone_signal == 'spin'
+                  else f'pause {self._zone_dwell_s:.1f}s (no spin)')
+        self.get_logger().info(f'Zone arrival signal: {signal}')
 
         # Wait for Nav2 to be up. If asked, seed AMCL with the home pose so we
         # don't need a manual "2D Pose Estimate" click (sim convenience).
@@ -323,7 +336,7 @@ class NavigatorNode(Node):
                 self.get_logger().info(f'[NAV] -> {wp["name"]} at ({wp["x"]}, {wp["y"]})')
                 if self._drive_to(wp['x'], wp['y'], wp['yaw']):
                     self.get_logger().info(f'[ARRIVED] {wp["name"]} — {wp["action"].upper()}')
-                    self._spin_action()  # 360° spin = spray/fertilize signal + dwell
+                    self._signal_action(wp)  # pause & dwell (default) or 360° spin
                     self._completed.append(wp['name'])
                 else:
                     self.get_logger().warn(f'[SKIP] {wp["name"]} (cancelled or failed)')
@@ -348,6 +361,32 @@ class NavigatorNode(Node):
             self.get_logger().info('[HOME] reached' if ok else '[HOME] failed/cancelled')
             self._current = None
             self._state = 'idle'
+
+    def _signal_action(self, wp):
+        """Signal the spray/fertilize action on arrival.
+
+        Default ('pause'): stop and hold for a couple of seconds. The logged
+        /farm_action (fired by zone_monitor_node on entry) is the real proof,
+        and staying put keeps localization rock-steady. 'spin': rotate ~360° —
+        sim eye-candy only; avoid on the real robot (worst odometry slip + LiDAR
+        smear). Either way zone_monitor_node has already fired on entry."""
+        if self._zone_signal == 'spin':
+            self._spin_action()
+        else:
+            self._dwell(float(wp.get('pause_s', self._zone_dwell_s)))
+
+    def _dwell(self, seconds: float):
+        """Hold position for `seconds`, publishing zero velocity so the robot
+        stays put (overrides any lingering command) while zone_monitor_node's
+        /farm_action is logged. Honors a mid-dwell cancel/return-home."""
+        self.get_logger().info(f'[DWELL] holding {seconds:.1f}s')
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < seconds and not self._cancel_requested:
+            stop = TwistStamped()
+            stop.header.stamp    = self.get_clock().now().to_msg()
+            stop.header.frame_id = 'base_link'
+            self._cmd_pub.publish(stop)
+            time.sleep(0.1)
 
     def _spin_action(self, revolutions: float = 1.0):
         """Rotate ~360° in place to signal the spray/fertilize action.

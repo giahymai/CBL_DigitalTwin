@@ -88,8 +88,10 @@ each farm zone, and steers around walls/obstacles locally. The robot never
 gropes blindly — it follows a planned, collision-free path.
 
 **C. Environment interaction (farm zones).** When the robot reaches a farm zone,
-`zone_monitor_node` fires a `/farm_action` (spray/fertilize) and the robot spins
-360° in place to signal the operation; `dt_logger_node` logs it with a timestamp.
+`zone_monitor_node` fires a `/farm_action` (spray/fertilize) and the robot stops
+and dwells there for a couple of seconds to signal the operation; `dt_logger_node`
+logs it with a timestamp. (A 360° spin is available as an optional, flashier
+gesture via `zone_signal:=spin`, but the logged event is the actual proof.)
 
 **Evidence:**
 ```bash
@@ -205,8 +207,9 @@ Tour order: C (top-left, near spawn) → A (top-right) → D (bottom-right) → 
 > action. A low disc sits under the LiDAR beam, so the robot drives over it and
 > `zone_monitor_node` fires `/farm_action`. The disc radius equals the 0.35 m
 > trigger radius, so the visible zone and the detected zone line up exactly.
-> When the robot reaches a zone it **spins 360° in place** to signal the
-> spray/fertilize action (visible in Gazebo + RViz).
+> When the robot reaches a zone it **stops and dwells ~2.5 s** to signal the
+> spray/fertilize action (the logged `/farm_action` is the proof). A 360° spin
+> is available as an optional gesture via `zone_signal:=spin`.
 
 Coordinates are in the map/odom frame (metres from robot start position).
 Update in **both** places before the lab session:
@@ -360,9 +363,10 @@ ros2 run turtlebot3_teleop teleop_keyboard \
 - `ros2 topic echo /scan --once` + `/cmd_vel --once` (**Goal ①** bi-directional)
 - Drive onto a colored floor tile → `/farm_action` fires (**Goal ③C** zone action)
 
-> **Auto-spin in teleop:** the 360° spray-spin is built into the *Nav2 navigator*,
-> so it fires in autonomous mode (Mode 2), not while driving by hand. To get the
-> spin during manual teleop, run `zone_monitor_node` yourself with
+> **Spin at zones is OFF by default.** The autonomous Nav2 navigator now just
+> pauses ~2.5 s at each zone (Mode 2); pass `zone_signal:=spin` if you want the
+> 360° spray-spin there instead. To get a spin during manual **teleop** (no
+> navigator running), run `zone_monitor_node` yourself with
 > `spin_on_entry:=true` instead of letting `farm_twin.launch.py` start it (do
 > NOT run both — they would both command motion):
 > ```bash
@@ -415,8 +419,9 @@ initial pose automatically (`set_initial_pose:=true`); if it didn't, click
 ros2 service call /start_navigation std_srvs/srv/Trigger
 ```
 
-Robot drives a **Nav2-planned path** to each zone, avoids obstacles, and spins
-360° at each zone to signal the spray/fertilize operation.
+Robot drives a **Nav2-planned path** to each zone, avoids obstacles, and stops
+to dwell at each zone to signal the spray/fertilize operation (pass
+`zone_signal:=spin` if you'd rather it spin 360° there).
 
 Monitor / control:
 ```bash
@@ -500,9 +505,11 @@ the run will fail:
 - [ ] **LaserScan aligned with map**: in RViz, enable the LaserScan display and
       verify the red/yellow LiDAR lines land on the map walls. If they are offset,
       AMCL is poorly localized → robot will move erratically. Redo "2D Pose Estimate".
-- [ ] **Test the spin early**: the 360° spin publishes straight to `/cmd_vel`. The
-      lab's stock Nav2 runs `collision_monitor`, which may dampen it. If the spin
-      is weak, raise `spin_speed` (param) or tell us to route the spin differently.
+- [ ] **Zone signal = pause (default).** The robot just stops ~2.5 s at each zone;
+      the logged `/farm_action` is the proof, so there is nothing to tune. Only if
+      you launch with `zone_signal:=spin` do you need to test the 360° spin early —
+      it publishes straight to `/cmd_vel` and `collision_monitor` may dampen it
+      (raise `spin_speed` if weak).
 
 > Same `ROS_DOMAIN_ID` in every laptop terminal, matching the robot's IP.
 
