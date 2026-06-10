@@ -142,7 +142,7 @@ The PoC has two run-time stacks that demonstrate different goals:
 
 | Concept | Where |
 |---|---|
-| **Nodes** | `twin_safety_node`, `zone_monitor_node`, `dt_logger_node`, `nav2_navigator` (Nav2 path planner), `safety_stop_node` (standalone sim safety stop) |
+| **Nodes** | `twin_safety_node`, `zone_monitor_node`, `dt_logger_node`, `nav2_navigator` (Nav2 path planner), `twin_pose_sync_node` (pins the Gazebo twin to the real robot, lab only), `safety_stop_node` (standalone sim safety stop) |
 | **Topics** | `/scan`, `/odom`, `/cmd_vel`, `/sim/cmd_vel`, `/farm_action`, `/dt/status`, `/navigator/status` |
 | **Services** | `/get_twin_status`, `/get_zone_status`, `/get_dt_status`, `/get_dt_log`, `/start_navigation`, `/return_home`, `/stop_navigation`, `/nav_status` |
 
@@ -319,7 +319,7 @@ source install/setup.bash
 Verify:
 ```bash
 ros2 pkg executables farm_twin_poc
-# Expected: dt_logger_node, nav2_navigator, safety_stop_node, twin_safety_node, zone_monitor_node
+# Expected: dt_logger_node, nav2_navigator, safety_stop_node, twin_pose_sync_node, twin_safety_node, zone_monitor_node
 ```
 
 > **Build error "failed to create symbolic link":**
@@ -739,6 +739,22 @@ Nav2 → /cmd_vel_nav_out → twin_safety_node ┬→ /cmd_vel     → real robo
 **Bidirectional safety (Goal ②):** if an obstacle appears in front of **either**
 robot (real LiDAR `/scan` OR Gazebo LiDAR `/sim/scan`), `twin_safety_node`
 blocks forward motion on **both** — real robot and Gazebo twin stop together.
+
+> **Twin Pose Sync (keeps the twin from "lurching").** The Gazebo twin is driven
+> open-loop by the mirrored `/sim/cmd_vel`, so it slowly drifts away from the
+> real robot (slip + WiFi delay + AMCL corrections the twin never gets). A
+> drifted twin would "see" walls on `/sim/scan` where the real robot has none,
+> and `twin_safety_node` would then stop the real robot's forward motion (while
+> still allowing rotation) — the robot lurches left/right in place. To prevent
+> this, `navigation.launch.py` runs **`twin_pose_sync_node`**: every tick it
+> reads the real robot's localized pose (TF `map->base_link` from AMCL) and
+> teleports the Gazebo twin to that exact pose via the `gz` `set_pose` service.
+> The twin stays a faithful shadow, `/sim/scan` reflects reality, and
+> bidirectional safety stays meaningful **without** phantom stops.
+>
+> If the spin/teleport does nothing, the gz model name differs from the default
+> (`turtlebot3_burger`). Check `gz model --list` and pass it:
+> `ros2 launch farm_twin_poc navigation.launch.py twin_entity:=<name>`
 
 > Do **not** run `farm_twin.launch.py` or `gazebo_twin.launch.py` separately
 > alongside this — they would start duplicate nodes and conflict.

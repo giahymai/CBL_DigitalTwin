@@ -34,6 +34,7 @@ setup(
             'zone_monitor_node = farm_twin_poc.zone_monitor_node:main',
             'dt_logger_node    = farm_twin_poc.dt_logger_node:main',
             'nav2_navigator    = farm_twin_poc.navigator_node:main',
+            'twin_pose_sync_node = farm_twin_poc.twin_pose_sync_node:main',
         ],
     },
 )

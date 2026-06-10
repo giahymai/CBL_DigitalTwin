@@ -60,6 +60,7 @@ def generate_launch_description():
     ret_batt      = LaunchConfiguration('return_battery_percent')
     set_pose      = LaunchConfiguration('set_initial_pose')
     nav2_params   = LaunchConfiguration('params_file')
+    twin_entity   = LaunchConfiguration('twin_entity')
 
     default_map    = os.path.join(pkg_share, 'maps', 'lab_map.yaml')
     default_params = os.path.join(pkg_share, 'config', 'nav2_lab.yaml')
@@ -76,6 +77,11 @@ def generate_launch_description():
         DeclareLaunchArgument('set_initial_pose', default_value='true'),
         DeclareLaunchArgument('params_file', default_value=default_params,
                               description='Nav2 params yaml (default: nav2_lab.yaml)'),
+        # gz MODEL name of the Gazebo twin (NOT a ROS namespace). twin_pose_sync_node
+        # teleports this model to the real robot's pose. Verify with `gz model --list`
+        # and override if your spawn names it differently: twin_entity:=burger
+        DeclareLaunchArgument('twin_entity', default_value='turtlebot3_burger',
+                              description='gz model name of the Gazebo twin to pin'),
 
         # 1) Gazebo Digital Twin — visual mirror of the real robot.
         # Spawns at home_x/home_y so the twin starts at the same map position
@@ -125,6 +131,27 @@ def generate_launch_description():
                 'sim_cmd_topic':    '/sim/cmd_vel',
                 'stop_distance':    0.25,
                 'front_angle_deg':  30.0,
+            }],
+        ),
+
+        # 2c) Twin Pose Sync — pin the Gazebo twin to the real robot's localized
+        # pose (TF map->base_link) so it never drifts. Without this the open-loop
+        # twin drifts into walls, its /sim/scan reports phantom obstacles, and
+        # twin_safety_node stops the real robot's forward motion (allowing only
+        # rotation) -> the robot lurches in place. Pinning keeps /sim/scan honest
+        # so bidirectional safety stays meaningful AND the robot drives smoothly.
+        Node(
+            package='farm_twin_poc',
+            executable='twin_pose_sync_node',
+            name='twin_pose_sync_node',
+            output='screen',
+            parameters=[{
+                'world_name':   'lab_world',
+                'entity_name':  twin_entity,
+                'global_frame': 'map',
+                'robot_frame':  'base_link',
+                'rate_hz':      10.0,
+                'use_sim_time': use_sim_time,
             }],
         ),
 
