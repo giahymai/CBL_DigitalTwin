@@ -314,7 +314,15 @@ collision_monitor:
     polygons: ["PolygonStop"]
     PolygonStop:
       type: "circle"
-      radius: 0.1
+      # Emergency-stop radius (from base_footprint centre). MUST be larger than
+      # the LiDAR's blind zone or it can never fire: the lab robot's LDS-02 does
+      # not return anything closer than ~0.16 m, so the old radius 0.1 m meant no
+      # scan point ever fell inside the circle and the "last-resort stop" was dead
+      # code. 0.20 m sits just outside the blind zone (a real ~0.04 m detection
+      # band) and ~0.10 m beyond the 0.105 m robot edge, so it only trips when an
+      # object is genuinely about to be hit — the planned path stays ≥0.25 m off
+      # walls (inflation_radius), so this does NOT false-trigger in normal driving.
+      radius: 0.2
       action_type: "stop"
       min_points: 4
       visualize: true

@@ -132,6 +132,16 @@ class NavigatorNode(Node):
         self.declare_parameter('arrival_radius', 0.18)
         self.declare_parameter('stuck_time',     8.0)
         self.declare_parameter('stuck_move',     0.05)
+        # If the robot is stuck (not moving for stuck_time) we decide what it
+        # means by HOW FAR it is from the zone centre:
+        #   - within stuck_accept_radius  -> basically on the zone, a slow sim
+        #       just can't nudge the last few cm. Accept it as arrived.
+        #   - beyond stuck_accept_radius  -> something is in the way (an obstacle
+        #       blocking the path). Report FAILURE and skip the zone instead of
+        #       falsely logging it as visited. Default 0.35 m = the zone trigger
+        #       radius, so "accepted" implies the robot is inside the zone and
+        #       zone_monitor_node has already fired /farm_action (the real proof).
+        self.declare_parameter('stuck_accept_radius', 0.35)
         self.declare_parameter('global_frame',   'map')
         self.declare_parameter('robot_frame',    'base_link')
 
@@ -148,6 +158,7 @@ class NavigatorNode(Node):
         self._arrival_radius = float(gp('arrival_radius').value)
         self._stuck_time     = float(gp('stuck_time').value)
         self._stuck_move     = float(gp('stuck_move').value)
+        self._stuck_accept_radius = float(gp('stuck_accept_radius').value)
         self._global_frame   = gp('global_frame').value
         self._robot_frame    = gp('robot_frame').value
 
@@ -286,8 +297,12 @@ class NavigatorNode(Node):
         Let Nav2 drive close to the zone CENTRE; exit early only when:
           - within arrival_radius of the centre (arrived, nicely centred), or
           - the robot hasn't moved (> stuck_move) for stuck_time while Nav2 keeps
-            trying (stuck on a slow sim) — accept the spot and move on so the
-            tour doesn't hang."""
+            trying. Then it depends on distance to the centre:
+              * close (<= stuck_accept_radius): a slow sim just can't nudge the
+                last few cm -> accept as arrived so the tour doesn't hang.
+              * far  (>  stuck_accept_radius): the path is blocked (e.g. an
+                obstacle) -> return False so the zone is skipped, not falsely
+                logged as visited."""
         self._nav.goToPose(self._make_pose(x, y, yaw))
         start       = self.get_clock().now()
         last_pos    = self._map_xy()
@@ -306,9 +321,18 @@ class NavigatorNode(Node):
                     last_pos, last_move_t = pos, time.monotonic()
                 elif time.monotonic() - last_move_t > self._stuck_time:
                     d = math.hypot(x - pos[0], y - pos[1])
-                    self.get_logger().warn(f'[NAV] stuck {d:.2f} m from centre — moving on')
+                    if d <= self._stuck_accept_radius:
+                        # Basically on the zone — accept and move on (slow sim).
+                        self.get_logger().warn(
+                            f'[NAV] stuck {d:.2f} m from centre — close enough, accepting')
+                        self._nav.cancelTask()
+                        return True
+                    # Stuck far from the centre → the path is blocked (obstacle).
+                    # Report failure so this zone is skipped, not logged as done.
+                    self.get_logger().warn(
+                        f'[NAV] stuck {d:.2f} m from centre — path blocked, skipping zone')
                     self._nav.cancelTask()
-                    return True
+                    return False
             if (self.get_clock().now() - start) > Duration(seconds=timeout_s):
                 self.get_logger().warn('[NAV] goal timeout — cancelling')
                 self._nav.cancelTask()

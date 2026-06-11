@@ -833,6 +833,20 @@ ros2 topic echo /farm_action
 ros2 service call /get_dt_log std_srvs/srv/Trigger
 ```
 
+> **For the obstacle test to actually work:**
+> - Use an obstacle **taller than ~0.20 m** so it crosses the single-plane
+>   LiDAR. A low box passes *under* the beam (the same reason the zone discs are
+>   flat) — the costmap never sees it, so Nav2 will not re-plan around it.
+> - Place it **> 0.5 m ahead** (inside the costmap, with room to re-plan). Within
+>   ~1–2 s Nav2 marks it and draws a new path around it; remove it and the path
+>   reverts (the costmap clears it).
+> - If something gets within **~0.20 m** of the robot, `collision_monitor`
+>   (`PolygonStop`, `nav2_lab.yaml`) hard-stops it — the last-resort emergency
+>   brake. This is normal, not a fault.
+> - If an obstacle **fully blocks** a zone, the navigator now **skips** that zone
+>   (logs `path blocked, skipping zone`) instead of falsely reporting it visited,
+>   so `/get_dt_log` only ever shows zones the robot truly reached.
+
 ---
 
 ## B8. All monitoring commands
