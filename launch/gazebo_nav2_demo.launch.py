@@ -8,19 +8,17 @@ Standalone Nav2 demo for "robot drives a planned path to each farm zone",
 running worlds/new_world.world in the default namespace so the TF tree is
 clean (map -> odom -> base_link) and Nav2 works.
 
-IMPORTANT — map mismatch
-The bundled maps/lab_map.yaml was produced from the old lab_world.sdf and
-does NOT match new_world.world walls. AMCL will fail to localise against
-it. Generate a matching map first (SLAM in new_world, or pass map:=...).
+Map is baked from new_world.world by scripts/world_to_map.py — re-run
+that script if you edit the world geometry.
 
 USAGE:
   colcon build --packages-select farm_twin_poc && source install/setup.bash
-  ros2 launch farm_twin_poc gazebo_nav2_demo.launch.py map:=$HOME/map.yaml
+  ros2 launch farm_twin_poc gazebo_nav2_demo.launch.py
   # In RViz: confirm AMCL has the robot at the spawn, then start the tour:
   ros2 service call /start_navigation std_srvs/srv/Trigger
 
 ARGS:
-  map           path to SLAM map yaml             (default: pkg maps/lab_map.yaml — STALE)
+  map           path to occupancy-grid yaml       (default: pkg maps/new_world_map.yaml)
   world         path to the world sdf             (default: pkg worlds/new_world.world)
   x_pose,y_pose robot spawn position              (default: 1.5, -2.0 — inside new_world)
 """
@@ -60,11 +58,10 @@ def generate_launch_description():
         ["'-s -r ' if '", headless, "' == 'true' else '-r '"])
 
     default_world = os.path.join(pkg_share, 'worlds', 'new_world.world')
-    # NOTE: lab_map.yaml was generated from lab_world.sdf and does NOT match
-    # new_world.world walls. AMCL will fail to localise until a new map is
-    # produced (run SLAM in new_world, or recreate world_to_map.py and bake
-    # one from the world directly). Override with map:=... in the meantime.
-    default_map = os.path.join(pkg_share, 'maps', 'lab_map.yaml')
+    # Map baked from new_world.world by scripts/world_to_map.py — walls are
+    # rasterised 1:1, no SLAM needed. Re-run that script if you edit the
+    # world. Override with map:=... to use a different map.
+    default_map = os.path.join(pkg_share, 'maps', 'new_world_map.yaml')
     # Nav2 params tuned for a slow (GPU-less) simulator: the LiDAR renders late,
     # so /scan and TF lag. This copy of turtlebot3's burger.yaml relaxes the
     # collision_monitor scan source_timeout (0.2 -> 5.0 s) and TF tolerances so
