@@ -71,6 +71,10 @@ def generate_launch_description():
     home_yaw     = LaunchConfiguration('home_yaw')
     ret_batt     = LaunchConfiguration('return_battery_percent')
     set_pose     = LaunchConfiguration('set_initial_pose')
+    nav2_params  = LaunchConfiguration('params_file')
+    twin_entity  = LaunchConfiguration('twin_entity')
+
+    default_params = os.path.join(pkg_share, 'config', 'nav2_lab.yaml')
 
     return LaunchDescription([
         # Pass the map path yourself on the command line, e.g.
@@ -87,6 +91,17 @@ def generate_launch_description():
         DeclareLaunchArgument('home_yaw', default_value='0.0'),
         DeclareLaunchArgument('return_battery_percent', default_value='20.0'),
         DeclareLaunchArgument('set_initial_pose', default_value='true'),
+        # Lab-tuned Nav2 params (transform_tolerance 1.0 for WiFi TF latency,
+        # AMCL recovery, collision_monitor timeout) — these prevent the
+        # mid-navigation "goal aborted" that happens with the tight default
+        # transform tolerances over WiFi.
+        DeclareLaunchArgument('params_file', default_value=default_params,
+                              description='Nav2 params yaml (default: nav2_lab.yaml)'),
+        # gz MODEL name of the Gazebo twin that twin_pose_sync_node teleports to
+        # the real robot's pose. Verify with `gz model --list` and override if
+        # your spawn names it differently: twin_entity:=burger
+        DeclareLaunchArgument('twin_entity', default_value='turtlebot3_burger',
+                              description='gz model name of the Gazebo twin to pin'),
 
         # 1) Gazebo Digital Twin — opens alongside RViz2. WRAPPED in a scoped
         # GroupAction so gazebo_twin's PushRosNamespace('sim') stays INSIDE the
@@ -105,9 +120,8 @@ def generate_launch_description():
         ]),
 
         # 2) Nav2 + AMCL with the lab map, in the GLOBAL namespace (so it sees the
-        # real robot's /scan and /tf). No params_file is passed, so
-        # turtlebot3_navigation2 uses its own default Nav2 params + RViz config —
-        # the configuration under which the map reliably renders in RViz2.
+        # real robot's /scan and /tf). Lab-tuned params_file (nav2_lab.yaml) is
+        # passed in to buffer WiFi TF latency and stop mid-navigation aborts.
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(pkg_nav2, 'launch', 'navigation2.launch.py')
@@ -115,7 +129,27 @@ def generate_launch_description():
             launch_arguments={
                 'map':          map_yaml,
                 'use_sim_time': use_sim_time,
+                'params_file':  nav2_params,
             }.items(),
+        ),
+
+        # 2b) Twin Pose Sync — pin the Gazebo twin to the real robot's localized
+        # pose (TF map->base_link) so the Gazebo robot mirrors RViz2 / the real
+        # robot. Runs in the GLOBAL namespace so it reads the real robot's TF;
+        # it only teleports the gz model, never touches /cmd_vel.
+        Node(
+            package='farm_twin_poc',
+            executable='twin_pose_sync_node',
+            name='twin_pose_sync_node',
+            output='screen',
+            parameters=[{
+                'world_name':   'lab_world',
+                'entity_name':  twin_entity,
+                'global_frame': 'map',
+                'robot_frame':  'base_link',
+                'rate_hz':      10.0,
+                'use_sim_time': use_sim_time,
+            }],
         ),
 
         # 3) Nav2 navigator (zones in sequence + return-home). Zone coordinates
