@@ -80,6 +80,67 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 ---
 
+## Running in Docker (Windows + WSL2)
+
+Start the container with `--net=host` so it shares the WSL2 host's
+network stack. This also exposes the web server's port 8080 to Windows
+through WSL2's automatic localhost forwarding — no `-p` flag needed
+(and `-p` is in fact ignored when `--net=host` is set):
+
+```bash
+docker run --rm -it --name turtlebot3_container --net=host \
+  -e DISPLAY=$DISPLAY \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v /home/c2irr10/turtlebot3_ws:/ws \
+  --user $(id -u):$(id -g) turtlebot3_ws bash
+```
+
+Every additional terminal joins the same container:
+
+```bash
+docker exec -it turtlebot3_container bash
+cd /ws
+source /opt/ros/jazzy/setup.bash
+source /opt/turtlebot3_ws/install/setup.bash
+source install/setup.bash
+export TURTLEBOT3_MODEL=burger
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+```
+
+### Reaching the web interface from your Windows browser
+
+Inside the container, in a second terminal:
+
+```bash
+ros2 run farm_twin_poc web_server_node
+# logs: web_server_node up — http://0.0.0.0:8080/
+```
+
+On Windows, open:
+
+```
+http://localhost:8080
+```
+
+That's it — `--net=host` puts the server on the WSL2 host, and WSL2
+proxies localhost to Windows automatically.
+
+If `localhost` doesn't work on older WSL2 setups, find the WSL IP from
+a PowerShell window and use that instead:
+
+```powershell
+wsl hostname -I
+# then in browser: http://<that-ip>:8080
+```
+
+To verify before troubleshooting Windows, hit the API from inside WSL:
+
+```bash
+curl http://localhost:8080/api/topics
+```
+
+---
+
 ## Build
 
 ```bash
