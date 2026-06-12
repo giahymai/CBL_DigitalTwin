@@ -105,6 +105,7 @@ class NavigatorNode(Node):
         # which aborts near walls when its collision look-ahead trips on the
         # inflation layer (zones sit close to walls).
         self.declare_parameter('spin_speed',     1.2)        # rad/s (faster spray/fertilize spin)
+        self.declare_parameter('settle_s',       5.0)        # s — hold still after each spin so AMCL re-converges
         self.declare_parameter('spin_cmd_topic', '/cmd_vel')
         # Arrival handling (map frame). We let Nav2 drive the robot close to the
         # zone CENTRE rather than bailing out the moment we touch the trigger
@@ -128,6 +129,7 @@ class NavigatorNode(Node):
         self._home_y         = float(gp('home_y').value)
         self._home_yaw       = float(gp('home_yaw').value)
         self._spin_speed     = float(gp('spin_speed').value)
+        self._settle_s       = float(gp('settle_s').value)
         self._arrival_radius = float(gp('arrival_radius').value)
         self._stuck_time     = float(gp('stuck_time').value)
         self._stuck_move     = float(gp('stuck_move').value)
@@ -371,6 +373,20 @@ class NavigatorNode(Node):
         stop.header.stamp    = self.get_clock().now().to_msg()
         stop.header.frame_id = 'base_link'
         self._cmd_pub.publish(stop)
+
+        # Settle: hold still so AMCL re-converges and the scan_gate /
+        # costmaps see clean LiDAR sweeps before the next goal is sent.
+        # Keep publishing zero-velocity cmd_vel so the collision_monitor
+        # source_timeout doesn't fire and stamp it as a stale source.
+        if self._settle_s > 0.0:
+            self.get_logger().info(f'[SPIN] settling {self._settle_s:.1f}s')
+            t_end = time.monotonic() + self._settle_s
+            while time.monotonic() < t_end and not self._cancel_requested:
+                z = TwistStamped()
+                z.header.stamp    = self.get_clock().now().to_msg()
+                z.header.frame_id = 'base_link'
+                self._cmd_pub.publish(z)
+                time.sleep(0.1)
 
     @staticmethod
     def _wrap(a):
