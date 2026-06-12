@@ -65,16 +65,15 @@ from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 from tf2_ros import Buffer, TransformListener
 from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
 
-# Aligned with FARM_ZONES in zone_monitor_node.py. yaw is the heading the robot
-# should face on arrival (radians); it does not affect zone detection.
-# Spawn is at (3, 3). The top row (y=2.7) is near the spawn; the bottom row
-# (y=0.7) is far. Visit order: top-left spray → top-right fertilize →
-# bottom-right fertilize → bottom-left spray (an S-curve that keeps path short).
+# Aligned with FARM_ZONES in zone_monitor_node.py and the zone markers in
+# worlds/new_world.world. yaw is the heading on arrival (radians); it does
+# not affect zone detection. Visit order: top-left spray → top-right fertilize
+# → bottom-right fertilize → bottom-left spray (S-curve, shortest path).
 WAYPOINTS = [
-    {'name': 'spray_zone_A',     'x': 0.5, 'y': 2.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
-    {'name': 'fertilize_zone_B', 'x': 3.5, 'y': 2.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
-    {'name': 'fertilize_zone_D', 'x': 3.5, 'y': 0.7, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
-    {'name': 'spray_zone_C',     'x': 0.5, 'y': 0.7, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
+    {'name': 'spray_zone_A',     'x':  0.0, 'y':  0.4, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
+    {'name': 'fertilize_zone_B', 'x':  1.8, 'y':  0.4, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
+    {'name': 'fertilize_zone_D', 'x':  1.6, 'y': -3.0, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
+    {'name': 'spray_zone_C',     'x':  0.0, 'y': -3.0, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
 ]
 
 

@@ -20,6 +20,8 @@ setup(
             glob('maps/*')),
         (os.path.join('share', package_name, 'config'),
             glob('config/*')),
+        (os.path.join('share', package_name, 'web'),
+            glob('web/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -29,11 +31,10 @@ setup(
     license='MIT',
     entry_points={
         'console_scripts': [
-            'safety_stop_node  = farm_twin_poc.safety_stop_node:main',
-            'twin_safety_node  = farm_twin_poc.twin_safety_node:main',
             'zone_monitor_node = farm_twin_poc.zone_monitor_node:main',
             'dt_logger_node    = farm_twin_poc.dt_logger_node:main',
             'nav2_navigator    = farm_twin_poc.navigator_node:main',
+            'web_server_node   = farm_twin_poc.web_server_node:main',
         ],
     },
 )

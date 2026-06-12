@@ -1,34 +1,28 @@
 #!/usr/bin/env python3
 """
-gazebo_nav2_demo.launch.py — Nav2 demo in the LAB world (NO namespace)
-======================================================================
+gazebo_nav2_demo.launch.py — Nav2 demo in new_world (NO namespace)
+=================================================================
 Farm Twin PoC | Team 5 Terra Minds
 
 Standalone Nav2 demo for "robot drives a planned path to each farm zone",
-running the SAME lab world used by the twin (worlds/lab_world.sdf) but WITHOUT
-the `sim` namespace, so the TF tree is clean (map -> odom -> base_link) and
-Nav2 works.
+running worlds/new_world.world in the default namespace so the TF tree is
+clean (map -> odom -> base_link) and Nav2 works.
 
-Why the lab world + lab map?  Your lab map (.pgm/.yaml) was produced by SLAM
-and converted into worlds/lab_world.sdf via scripts/map_to_world.py, so the
-Gazebo walls and the Nav2 map MATCH. (Never mix turtlebot3_world with the lab
-map — the walls wouldn't line up and AMCL would fail.)
+IMPORTANT — map mismatch
+The bundled maps/lab_map.yaml was produced from the old lab_world.sdf and
+does NOT match new_world.world walls. AMCL will fail to localise against
+it. Generate a matching map first (SLAM in new_world, or pass map:=...).
 
-Why no namespace?  The twin launch uses PushRosNamespace('sim'), but Nav2 does
-NOT prefix TF frames with the namespace, so it would look for `odom`/
-`base_link` that don't exist under `sim` -> "Invalid frame ID 'odom'". This
-demo therefore runs everything in the default namespace.
-
-USAGE (Gazebo, at home):
+USAGE:
   colcon build --packages-select farm_twin_poc && source install/setup.bash
   ros2 launch farm_twin_poc gazebo_nav2_demo.launch.py map:=$HOME/map.yaml
-  # In RViz: "2D Pose Estimate" at the robot spawn, wait for "Nav2 is active":
+  # In RViz: confirm AMCL has the robot at the spawn, then start the tour:
   ros2 service call /start_navigation std_srvs/srv/Trigger
 
 ARGS:
-  map           path to your SLAM lab map yaml   (default: ~/map.yaml)
-  world         path to the lab world sdf        (default: pkg worlds/lab_world.sdf)
-  x_pose,y_pose robot spawn position             (default: 3, 3 — match twin)
+  map           path to SLAM map yaml             (default: pkg maps/lab_map.yaml — STALE)
+  world         path to the world sdf             (default: pkg worlds/new_world.world)
+  x_pose,y_pose robot spawn position              (default: 1.5, -2.0 — inside new_world)
 """
 import os
 from launch import LaunchDescription
@@ -65,10 +59,11 @@ def generate_launch_description():
     gz_flags = PythonExpression(
         ["'-s -r ' if '", headless, "' == 'true' else '-r '"])
 
-    default_world = os.path.join(pkg_share, 'worlds', 'lab_world.sdf')
-    # Map bundled with the package, generated from lab_world.sdf via
-    # scripts/world_to_map.py. Matches the world 1:1 so the at-home demo runs
-    # with no manual SLAM. Override with map:=... to use your own.
+    default_world = os.path.join(pkg_share, 'worlds', 'new_world.world')
+    # NOTE: lab_map.yaml was generated from lab_world.sdf and does NOT match
+    # new_world.world walls. AMCL will fail to localise until a new map is
+    # produced (run SLAM in new_world, or recreate world_to_map.py and bake
+    # one from the world directly). Override with map:=... in the meantime.
     default_map = os.path.join(pkg_share, 'maps', 'lab_map.yaml')
     # Nav2 params tuned for a slow (GPU-less) simulator: the LiDAR renders late,
     # so /scan and TF lag. This copy of turtlebot3's burger.yaml relaxes the
@@ -84,13 +79,13 @@ def generate_launch_description():
         DeclareLaunchArgument('map', default_value=default_map),
         DeclareLaunchArgument('params_file', default_value=default_params),
         DeclareLaunchArgument('world', default_value=default_world),
-        # Spawn at (3, 3) — matches the lab session and the AMCL seed in
-        # nav2_sim.yaml (initial_pose x:3.0 y:3.0). zone_monitor uses TF
-        # (map->base_link), NOT /odom, so the odom-frame offset from spawn does
-        # not affect zone detection; AMCL corrects the map->odom transform so
-        # the robot's map-frame position matches the tile coordinates exactly.
-        DeclareLaunchArgument('x_pose', default_value='3'),
-        DeclareLaunchArgument('y_pose', default_value='3'),
+        # Spawn at (1.5, -2.0) — central open spot inside new_world.world
+        # (>0.6 m from any wall, >1 m from any zone). Must match the AMCL
+        # seed in nav2_sim.yaml (initial_pose x/y) and the navigator's home
+        # below. zone_monitor uses TF (map->base_link), NOT /odom, so the
+        # odom-frame offset from spawn does not affect zone detection.
+        DeclareLaunchArgument('x_pose', default_value='1.5'),
+        DeclareLaunchArgument('y_pose', default_value='-2.0'),
         DeclareLaunchArgument(
             'headless', default_value='false',
             description='true = Gazebo server only (no GUI); use on GPU-less '
@@ -167,13 +162,13 @@ def generate_launch_description():
                 # BasicNavigator.initial_pose on /initialpose until AMCL
                 # responds. With set_initial_pose:=False that pose is the
                 # default-constructed (0,0,0), silently overwriting AMCL's
-                # nav2_sim.yaml seed at (3,3) — the robot ends up localised at
-                # the wrong spot and Nav2 plans from (0,0). True makes the
+                # nav2_sim.yaml seed — the robot ends up localised at the
+                # wrong spot and Nav2 plans from (0,0). True makes the
                 # navigator pre-load (home_x, home_y) so the same loop
-                # publishes the correct (3,3) pose.
+                # publishes the correct pose.
                 'set_initial_pose': True,
-                'home_x':           3.0,     # = spawn (3,3); return_home comes back here
-                'home_y':           3.0,
+                'home_x':           1.5,     # = spawn (1.5,-2.0); return_home comes back here
+                'home_y':          -2.0,
                 'home_yaw':         0.0,
                 'use_sim_time':     use_sim_time,
             }],

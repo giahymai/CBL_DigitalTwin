@@ -41,15 +41,15 @@ amcl:
     z_short: 0.05
     scan_topic: scan
     map_topic: map
-    # Self-seed at the spawn pose (3,3) — matches gazebo_twin.launch.py and the
-    # real robot start position at the lab, so at-home and at-lab look identical.
+    # Self-seed at the spawn pose (1.5, -2.0) — must match x_pose/y_pose in
+    # gazebo_nav2_demo.launch.py and home_x/home_y in the navigator params.
     set_initial_pose: true
     always_reset_initial_pose: false
     first_map_only: false
     initial_pose:
-      x: 3.0
-      y: 3.0
-      z: 0.0
+      x:  1.5
+      y: -2.0
+      z:  0.0
       yaw: 0.0
 
 bt_navigator:

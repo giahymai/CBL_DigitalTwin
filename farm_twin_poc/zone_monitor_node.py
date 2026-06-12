@@ -32,13 +32,13 @@ from tf2_ros import Buffer, TransformListener
 from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
 
 FARM_ZONES = [
-    {'name': 'spray_zone_A',     'x':  0.5, 'y':  2.7, 'radius': 0.35, 'action': 'spray',
+    {'name': 'spray_zone_A',     'x':  0.0, 'y':  0.4, 'radius': 0.35, 'action': 'spray',
      'description': 'Striga-infested zone — targeted herbicide spray'},
-    {'name': 'fertilize_zone_B', 'x':  3.5, 'y':  2.7, 'radius': 0.35, 'action': 'fertilize',
+    {'name': 'fertilize_zone_B', 'x':  1.8, 'y':  0.4, 'radius': 0.35, 'action': 'fertilize',
      'description': 'Low-NPK zone — variable-rate fertilizer application'},
-    {'name': 'fertilize_zone_D', 'x':  3.5, 'y':  0.7, 'radius': 0.35, 'action': 'fertilize',
+    {'name': 'fertilize_zone_D', 'x':  1.6, 'y': -3.0, 'radius': 0.35, 'action': 'fertilize',
      'description': 'Low-NPK zone — variable-rate fertilizer application'},
-    {'name': 'spray_zone_C',     'x':  0.5, 'y':  0.7, 'radius': 0.35, 'action': 'spray',
+    {'name': 'spray_zone_C',     'x':  0.0, 'y': -3.0, 'radius': 0.35, 'action': 'spray',
      'description': 'Striga-infested zone — targeted herbicide spray'},
 ]
 
@@ -150,9 +150,7 @@ class ZoneMonitorNode(Node):
             threading.Thread(target=self._spin_360, daemon=True).start()
 
     def _spin_360(self):
-        """Rotate ~360° on the spot to signal spraying/fertilizing (teleop demo
-        only). Time-based, no yaw feedback needed. linear.x stays 0 so
-        twin_safety_node lets the turn through."""
+        """Rotate ~360° on the spot to signal spraying/fertilizing."""
         self._spinning = True
         duration = 2.0 * math.pi / max(0.1, self._spin_speed)
         t0 = time.monotonic()
