@@ -98,9 +98,10 @@ def generate_launch_description():
         DeclareLaunchArgument('params_file', default_value=default_params,
                               description='Nav2 params yaml (default: nav2_lab.yaml)'),
         # gz MODEL name of the Gazebo twin that twin_pose_sync_node teleports to
-        # the real robot's pose. Verify with `gz model --list` and override if
-        # your spawn names it differently: twin_entity:=burger
-        DeclareLaunchArgument('twin_entity', default_value='turtlebot3_burger',
+        # the real robot's pose. The spawn_turtlebot3 model is named 'burger'
+        # (confirmed via `gz model --list`). Override if yours differs:
+        # twin_entity:=<name>
+        DeclareLaunchArgument('twin_entity', default_value='burger',
                               description='gz model name of the Gazebo twin to pin'),
 
         # 1) Gazebo Digital Twin — opens alongside RViz2. WRAPPED in a scoped
