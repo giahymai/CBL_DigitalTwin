@@ -182,4 +182,53 @@ window.addEventListener("DOMContentLoaded", () => {
   const ctx = canvas.getContext("2d");
   resizeCanvas(canvas, ctx);
   window.addEventListener("resize", () => resizeCanvas(canvas, ctx));
+  connectLiveState();
 });
+
+// ---------------------------------------------------------------------------
+// Live state — Server-Sent Events from web_server_node
+// ---------------------------------------------------------------------------
+//
+// STATE mirrors web_server_node's topic cache. Read it from anywhere
+// (e.g. `STATE.odom.pose.position.x`). It is populated by:
+//
+//   1) one `snapshot` event right after the connection opens, containing
+//      every cached topic (any may still be null if no message arrived yet);
+//   2) per-tick `message` events containing only the topics that changed
+//      since the previous tick (default 10 Hz, server param stream_rate_hz).
+//
+// To react to updates, override window.onStateChange:
+//
+//   window.onStateChange = (changedKeys, state) => {
+//       if (changedKeys.includes('odom')) drawRobot(state.odom);
+//   };
+//
+// File:// mode has no server, so the EventSource is skipped — STATE stays
+// the empty object and the canvas just shows the baked map.
+
+const STATE = {};
+window.STATE = STATE;
+window.onStateChange = window.onStateChange || (() => {});
+
+function connectLiveState() {
+  if (location.protocol === "file:") return;   // standalone mode, no server
+  const es = new EventSource("/api/stream");
+
+  es.addEventListener("snapshot", (e) => {
+    const snap = JSON.parse(e.data);
+    for (const k of Object.keys(snap)) STATE[k] = snap[k];
+    window.onStateChange(Object.keys(snap), STATE);
+  });
+
+  es.onmessage = (e) => {
+    const delta = JSON.parse(e.data);
+    const keys = Object.keys(delta);
+    for (const k of keys) STATE[k] = delta[k];
+    window.onStateChange(keys, STATE);
+  };
+
+  es.onerror = () => {
+    // The browser auto-reconnects with backoff; nothing to do but log.
+    console.warn("/api/stream disconnected, will retry");
+  };
+}

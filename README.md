@@ -111,7 +111,6 @@ source /opt/ros/jazzy/setup.bash
 source /opt/turtlebot3_ws/install/setup.bash
 source install/setup.bash
 export TURTLEBOT3_MODEL=burger
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ```
 
 ### Reaching the web interface from your Windows browser

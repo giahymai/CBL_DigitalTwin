@@ -31,9 +31,20 @@ ENDPOINTS
   GET /app.js            -> web/app.js
   GET /<anything-else>   -> web/<anything-else>   (404 if missing)
 
-  GET /api/state         -> JSON dict of every cached topic
+  GET /api/state         -> JSON dict of every cached topic (one-shot)
   GET /api/state/<name>  -> JSON for one topic (e.g. /api/state/odom)
   GET /api/topics        -> list of cached topic names
+  GET /api/stream        -> Server-Sent Events: live push of state changes
+
+The push endpoint sends:
+  - first event `snapshot`         with the full cached state
+  - then per-tick `data`           events containing only the topics that
+                                   changed since the last tick (10 Hz)
+  - heartbeat comments every 15 s  so reverse-proxies don't time out
+
+Browser side, the contract is one line:
+    new EventSource('/api/stream').onmessage = (e) =>
+        Object.assign(STATE, JSON.parse(e.data));
 
 `/api/state` responses are cache-busted with `Cache-Control: no-store`; the
 static files use a short cache so you can hot-reload while developing.
@@ -74,6 +85,7 @@ import copy
 import json
 import math
 import os
+import queue
 import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -276,9 +288,19 @@ class WebServerNode(Node):
         self.declare_parameter('host', '0.0.0.0')
         self.declare_parameter('port', 8080)
         self.declare_parameter('scan_decimate', 4)
+        self.declare_parameter('stream_rate_hz', 10.0)
 
         self._scan_decimate = int(
             self.get_parameter('scan_decimate').value)
+        stream_period = 1.0 / max(0.1, float(
+            self.get_parameter('stream_rate_hz').value))
+
+        # SSE plumbing — one queue per live /api/stream connection. Topic
+        # callbacks mark keys dirty in `_dirty`; a periodic timer drains
+        # the set, builds a delta, and fans it out to every queue.
+        self._sse_lock:    threading.Lock         = threading.Lock()
+        self._sse_clients: list[queue.Queue[str]] = []
+        self._dirty:       set[str]               = set()
 
         self._lock  = threading.Lock()
         self._state: dict[str, Optional[dict]] = {
@@ -353,9 +375,14 @@ class WebServerNode(Node):
             target=self._httpd.serve_forever, daemon=True)
         self._http_thread.start()
 
+        # SSE broadcast tick — coalesces N callbacks per period into one
+        # delta event so a 60 Hz /odom topic doesn't become 60 events/s.
+        self.create_timer(stream_period, self._sse_broadcast)
+
         self.get_logger().info(
             f'web_server_node up — http://{host}:{port}/  '
-            f'(static root: {self._web_root})')
+            f'(static root: {self._web_root}, '
+            f'SSE rate: {1.0/stream_period:.1f} Hz)')
 
     # -- public API used by the HTTP handler --------------------------------
 
@@ -377,11 +404,58 @@ class WebServerNode(Node):
         except Exception:
             pass
 
+    # -- SSE pub/sub API used by the HTTP handler ---------------------------
+
+    def sse_subscribe(self) -> 'queue.Queue[str]':
+        """Register a fresh client queue. Caller must call sse_unsubscribe
+        on disconnect. Bounded so a stalled browser tab can't grow memory
+        without limit — on overflow we drop the oldest payload."""
+        q: queue.Queue[str] = queue.Queue(maxsize=100)
+        with self._sse_lock:
+            self._sse_clients.append(q)
+        return q
+
+    def sse_unsubscribe(self, q: 'queue.Queue[str]') -> None:
+        with self._sse_lock:
+            if q in self._sse_clients:
+                self._sse_clients.remove(q)
+
+    def _sse_broadcast(self) -> None:
+        with self._sse_lock:
+            if not self._dirty or not self._sse_clients:
+                self._dirty.clear()
+                return
+            dirty = list(self._dirty)
+            self._dirty.clear()
+            clients = list(self._sse_clients)
+        with self._lock:
+            delta = {k: copy.deepcopy(self._state[k]) for k in dirty}
+        payload = json.dumps(delta, allow_nan=False)
+        # Fan out to every client; on a full queue, drop the oldest and
+        # retry once. If the client is so slow we still can't enqueue,
+        # let the next tick try again.
+        for q in clients:
+            try:
+                q.put_nowait(payload)
+            except queue.Full:
+                try:
+                    q.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    q.put_nowait(payload)
+                except queue.Full:
+                    pass
+
     # -- callbacks ----------------------------------------------------------
 
     def _store(self, key: str, value: dict) -> None:
         with self._lock:
             self._state[key] = value
+        # Marked AFTER the state update so the broadcast snapshot is the
+        # new value, never the previous one.
+        with self._sse_lock:
+            self._dirty.add(key)
 
     def _now(self) -> float:
         return self.get_clock().now().nanoseconds * 1e-9
@@ -471,6 +545,8 @@ def _make_handler(node: 'WebServerNode', web_root: str):
                 return self._send_json(node.get_state())
             if path == '/api/topics':
                 return self._send_json(node.topics())
+            if path == '/api/stream':
+                return self._send_sse()
             if path.startswith('/api/state/'):
                 name = path[len('/api/state/'):]
                 data = node.get(name)
@@ -493,6 +569,46 @@ def _make_handler(node: 'WebServerNode', web_root: str):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(body)
+
+        def _send_sse(self):
+            # Long-lived response. ThreadingHTTPServer gives each connection
+            # its own thread, so blocking here only blocks this client.
+            self.send_response(HTTPStatus.OK)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Connection', 'keep-alive')
+            self.send_header('X-Accel-Buffering', 'no')   # disable nginx buffering
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            try:
+                # First payload is the full snapshot so a freshly-loaded page
+                # has every topic even if nothing has changed since it
+                # connected. The client distinguishes it via `event:`.
+                snap = json.dumps(node.get_state(), allow_nan=False)
+                self.wfile.write(
+                    f'event: snapshot\ndata: {snap}\n\n'.encode('utf-8'))
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                return
+
+            q = node.sse_subscribe()
+            try:
+                while True:
+                    # 15 s heartbeat: SSE comments (lines starting with `:`)
+                    # are no-ops on the client but keep the TCP connection
+                    # alive through proxies / load balancers.
+                    try:
+                        payload = q.get(timeout=15.0)
+                        self.wfile.write(
+                            f'data: {payload}\n\n'.encode('utf-8'))
+                    except queue.Empty:
+                        self.wfile.write(b': heartbeat\n\n')
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, ValueError):
+                # Client closed the tab / network died.
+                pass
+            finally:
+                node.sse_unsubscribe(q)
 
         def _send_static(self, path: str):
             rel = path.lstrip('/') or _DEFAULT_FILE
