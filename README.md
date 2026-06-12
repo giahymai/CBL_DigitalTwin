@@ -82,18 +82,25 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 ## Running in Docker (Windows + WSL2)
 
-Start the container with `--net=host` so it shares the WSL2 host's
-network stack. This also exposes the web server's port 8080 to Windows
-through WSL2's automatic localhost forwarding — no `-p` flag needed
-(and `-p` is in fact ignored when `--net=host` is set):
+Start the container with `-p 8080:8080` so the web server's port is
+forwarded from the container to the WSL2 host. WSL2 then proxies that
+to Windows automatically, so a Windows browser hits the page at
+`http://localhost:8080`:
 
 ```bash
-docker run --rm -it --name turtlebot3_container --net=host \
+docker run --rm -it --name turtlebot3_container -p 8080:8080 \
   -e DISPLAY=$DISPLAY \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
   -v /home/c2irr10/turtlebot3_ws:/ws \
   --user $(id -u):$(id -g) turtlebot3_ws bash
 ```
+
+X11 (Gazebo/RViz GUI) still works because the X server's Unix socket
+is mounted in via `/tmp/.X11-unix`, which is filesystem-level and
+doesn't depend on host networking. If you also need ROS 2 nodes
+outside the container to discover nodes inside it, swap `-p 8080:8080`
+back for `--net=host` — the two are mutually exclusive (Docker ignores
+`-p` when host networking is active).
 
 Every additional terminal joins the same container:
 
@@ -122,8 +129,8 @@ On Windows, open:
 http://localhost:8080
 ```
 
-That's it — `--net=host` puts the server on the WSL2 host, and WSL2
-proxies localhost to Windows automatically.
+That's it — `-p 8080:8080` puts the container's port 8080 on the WSL2
+host, and WSL2 proxies localhost to Windows automatically.
 
 If `localhost` doesn't work on older WSL2 setups, find the WSL IP from
 a PowerShell window and use that instead:
