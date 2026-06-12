@@ -1,6 +1,10 @@
 import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    GroupAction,
+)
 from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
@@ -9,20 +13,32 @@ from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
     """
-    Launch Nav2 + autonomous Farm Twin navigation on the REAL robot (lab).
-    Requires a map.yaml produced by SLAM (see README B3).
+    Launch Nav2 + autonomous Farm Twin navigation on the REAL robot (lab),
+    with the Gazebo Digital Twin shown alongside RViz2.
+
+    This is the proven commit-1758379 Nav2 stack (turtlebot3_navigation2 with its
+    OWN default Nav2 params + RViz config — the setup under which the map reliably
+    renders), PLUS the Gazebo twin window.
+
+    CRUCIAL: gazebo_twin.launch.py does PushRosNamespace('sim'). If it is included
+    in the same scope as Nav2, that namespace LEAKS onto Nav2 — the whole Nav2
+    stack (map_server, amcl, costmaps, rviz) ends up under /sim, listening to
+    /sim/scan and /sim/tf, which do NOT carry the real robot's data (the robot
+    publishes /scan and /tf at the GLOBAL namespace). The result is a blank map
+    and "base_scan ... queue is full" errors. So the Gazebo include is wrapped in
+    a SCOPED GroupAction here, which contains the /sim namespace inside Gazebo and
+    keeps Nav2 in the global namespace where it can see the real robot.
 
     This brings up, in ONE command:
-      - Nav2 (turtlebot3_navigation2) with your lab map + AMCL + RViz2
-      - nav2_navigator   (drives zones in sequence, auto return-home on low battery)
+      - Gazebo Digital Twin  (visual 3D mirror, opens next to RViz2, topics in /sim)
+      - Nav2 (turtlebot3_navigation2) with your lab map + AMCL + RViz2 (GLOBAL ns)
+      - nav2_navigator    (drives zones in sequence, auto return-home on low battery)
       - zone_monitor_node (fires /farm_action at each zone)
       - dt_logger_node    (Digital Entity log + /dt/status)
 
-    This is the proven commit-1758379 stack: turtlebot3_navigation2 uses its OWN
-    default Nav2 params + RViz config (no params_file forced in), which is the
-    setup under which the map reliably renders in RViz2. No Gazebo here — run the
-    Gazebo twin in a second terminal so it can never block the Nav2/RViz2 stack:
-      ros2 launch farm_twin_poc gazebo_twin.launch.py x_pose:=3 y_pose:=3
+    No twin_safety_node here (its reflex made the real robot lurch — it lives in
+    the TELEOP stack farm_twin.launch.py). Zone layout comes from the current
+    navigator_node / zone_monitor_node source.
 
     Robot bringup (ros2 launch turtlebot3_bringup robot.launch.py) must already
     be running over SSH, and ROS_DOMAIN_ID must match the robot.
@@ -31,18 +47,22 @@ def generate_launch_description():
       ros2 launch farm_twin_poc navigation.launch.py \
           map:=$HOME/turtlebot3_ws/src/farm_twin_poc/maps/lab_map.yaml
 
-    Then in RViz click "2D Pose Estimate" at the robot's REAL location
-    (set_initial_pose stays false on the real robot), wait for "Nav2 is active":
+    Wait for "Nav2 is active", then:
       ros2 service call /start_navigation std_srvs/srv/Trigger
 
+    Override start/home position if robot is not at (3, 3):
+      ros2 launch farm_twin_poc navigation.launch.py home_x:=X home_y:=Y \
+          map:=<path>
+
     ARGS:
-      map                     path to SLAM lab map yaml      (default: ~/map.yaml)
-      use_sim_time            false on real robot            (default: false)
-      home_x, home_y, home_yaw  robot start pose to return to (default: 0,0,0)
+      map                     path to map yaml  (pass map:=<path>; default ~/map.yaml)
+      use_sim_time            false on real robot (default: false)
+      home_x, home_y, home_yaw  robot start pose + Gazebo spawn (default: 3, 3, 0)
       return_battery_percent  low-battery return threshold % (default: 20)
-      set_initial_pose        seed AMCL automatically        (default: false → use RViz)
+      set_initial_pose        seed AMCL automatically (default: true)
     """
-    pkg_nav2 = get_package_share_directory('turtlebot3_navigation2')
+    pkg_nav2  = get_package_share_directory('turtlebot3_navigation2')
+    pkg_share = get_package_share_directory('farm_twin_poc')
 
     use_sim_time = LaunchConfiguration('use_sim_time')
     map_yaml     = LaunchConfiguration('map')
@@ -53,15 +73,41 @@ def generate_launch_description():
     set_pose     = LaunchConfiguration('set_initial_pose')
 
     return LaunchDescription([
-        DeclareLaunchArgument('map', default_value=os.path.expanduser('~/map.yaml')),
+        # Pass the map path yourself on the command line, e.g.
+        #   map:=$HOME/turtlebot3_ws/src/farm_twin_poc/maps/lab_map.yaml
+        DeclareLaunchArgument(
+            'map',
+            default_value=os.path.expanduser('~/map.yaml'),
+            description='Path to map yaml — pass map:=/abs/path/lab_map.yaml'),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
-        DeclareLaunchArgument('home_x', default_value='0.0'),
-        DeclareLaunchArgument('home_y', default_value='0.0'),
+        # Default start position matches the fixed robot placement, the Gazebo
+        # spawn, and the current zone layout (robot starts top-left near zone C).
+        DeclareLaunchArgument('home_x', default_value='3.0'),
+        DeclareLaunchArgument('home_y', default_value='3.0'),
         DeclareLaunchArgument('home_yaw', default_value='0.0'),
         DeclareLaunchArgument('return_battery_percent', default_value='20.0'),
-        DeclareLaunchArgument('set_initial_pose', default_value='false'),
+        DeclareLaunchArgument('set_initial_pose', default_value='true'),
 
-        # 1) Nav2 + AMCL with the lab map.
+        # 1) Gazebo Digital Twin — opens alongside RViz2. WRAPPED in a scoped
+        # GroupAction so gazebo_twin's PushRosNamespace('sim') stays INSIDE the
+        # group and does NOT leak onto Nav2 below. Gazebo's own topics live under
+        # /sim (/sim/scan etc.), kept separate from the real robot's /scan.
+        GroupAction([
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(pkg_share, 'launch', 'gazebo_twin.launch.py')
+                ),
+                launch_arguments={
+                    'x_pose': home_x,
+                    'y_pose': home_y,
+                }.items(),
+            ),
+        ]),
+
+        # 2) Nav2 + AMCL with the lab map, in the GLOBAL namespace (so it sees the
+        # real robot's /scan and /tf). No params_file is passed, so
+        # turtlebot3_navigation2 uses its own default Nav2 params + RViz config —
+        # the configuration under which the map reliably renders in RViz2.
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(pkg_nav2, 'launch', 'navigation2.launch.py')
@@ -72,7 +118,9 @@ def generate_launch_description():
             }.items(),
         ),
 
-        # 2) Nav2 navigator (zones in sequence + return-home).
+        # 3) Nav2 navigator (zones in sequence + return-home). Zone coordinates
+        # come from navigator_node.py (current layout). At each zone the robot
+        # just STOPS and dwells — pause keeps localization steady.
         Node(
             package='farm_twin_poc',
             executable='nav2_navigator',
@@ -86,11 +134,13 @@ def generate_launch_description():
                 'home_y':                 home_y,
                 'home_yaw':               home_yaw,
                 'set_initial_pose':       set_pose,
+                'zone_signal':            'pause',
+                'spin_cmd_topic':         '/cmd_vel',
                 'use_sim_time':           use_sim_time,
             }],
         ),
 
-        # 3) Zone monitor — fires /farm_action at each zone. Detect in the MAP
+        # 4) Zone monitor — fires /farm_action at each zone. Detect in the MAP
         # frame via TF: under Nav2 /odom drifts and AMCL corrects it, so the
         # robot reaches a zone in map coords while /odom reads something else.
         Node(
@@ -106,7 +156,7 @@ def generate_launch_description():
             }],
         ),
 
-        # 4) DT logger — Digital Entity. On the real robot there is no separate
+        # 5) DT logger — Digital Entity. On the real robot there is no separate
         # sim odom, so both odom params point at /odom (sync_error_m ~ 0).
         Node(
             package='farm_twin_poc',
