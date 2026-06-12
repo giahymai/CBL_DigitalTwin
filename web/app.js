@@ -208,7 +208,19 @@ window.addEventListener("DOMContentLoaded", () => {
 
 const STATE = {};
 window.STATE = STATE;
-window.onStateChange = window.onStateChange || (() => {});
+
+// Called once per SSE tick — once with the full cache (snapshot), then on
+// every delta. `changedKeys` is the list of topics whose value just
+// landed; `state` is the full mirrored cache. Replace the body to wire
+// the UI (canvas, gauges, etc.).
+function handleStateChange(changedKeys, state) {
+  // Only log the topics that actually changed — STATE in full would dump
+  // the base64-encoded map / costmap on every tick and flood the console.
+  const delta = {};
+  for (const k of changedKeys) delta[k] = state[k];
+  console.log("[state]", changedKeys, delta);
+}
+window.onStateChange = handleStateChange;
 
 function connectLiveState() {
   if (location.protocol === "file:") return;   // standalone mode, no server
