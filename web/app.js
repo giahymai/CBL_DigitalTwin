@@ -62,9 +62,20 @@ const MAP = {
 // walls from sitting flush against the canvas edge.
 const PADDING_M = 0.5;
 
+// TurtleBot3 Burger footprint — 138 mm wide chassis ≈ 0.069 m radius.
+// Drawn as a single filled disc to match what the LiDAR plane sees.
+const ROBOT_RADIUS_M = 0.069;
+const ROBOT_FILL     = "rgba(60, 130, 220, 0.92)";
+const ROBOT_STROKE   = "rgba(0, 0, 0, 0.65)";
+
 // Recomputed each draw — kept in module scope so a future click/zoom
 // handler can convert pointer positions back to world coords.
 const view = { offsetX: 0, offsetY: 0, scale: 1 };
+
+// Live canvas refs — set in DOMContentLoaded so handleStateChange can
+// repaint on every SSE tick without re-querying the DOM.
+let canvasEl = null;
+let ctxRef   = null;
 
 function fitView(canvas) {
   // metres-per-pixel scale + offset so the whole world (plus padding) fits
@@ -155,6 +166,25 @@ function drawShape(ctx, s) {
   }
 }
 
+function drawRobot(ctx) {
+  // AMCL pose is in the map frame, which is what the canvas is in. /odom
+  // lives in the odom frame and would render at the wrong spot without
+  // applying the map->odom transform, so we deliberately ignore it.
+  const ap = STATE.amcl_pose;
+  if (!ap || !ap.pose || !ap.pose.position) return;
+  const [cx, cy] = worldToCanvas(ap.pose.position.x, ap.pose.position.y);
+  const r = ROBOT_RADIUS_M * view.scale;
+  ctx.save();
+  ctx.fillStyle   = ROBOT_FILL;
+  ctx.strokeStyle = ROBOT_STROKE;
+  ctx.lineWidth   = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
 function draw(canvas, ctx) {
   fitView(canvas);
   const dpr = window.devicePixelRatio || 1;
@@ -165,6 +195,7 @@ function draw(canvas, ctx) {
   ctx.fillRect(0, 0, W, H);
   drawGrid(ctx, canvas);
   for (const s of MAP.shapes) drawShape(ctx, s);
+  drawRobot(ctx);
 }
 
 function resizeCanvas(canvas, ctx) {
@@ -178,10 +209,10 @@ function resizeCanvas(canvas, ctx) {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  const canvas = document.getElementById("map");
-  const ctx = canvas.getContext("2d");
-  resizeCanvas(canvas, ctx);
-  window.addEventListener("resize", () => resizeCanvas(canvas, ctx));
+  canvasEl = document.getElementById("map");
+  ctxRef   = canvasEl.getContext("2d");
+  resizeCanvas(canvasEl, ctxRef);
+  window.addEventListener("resize", () => resizeCanvas(canvasEl, ctxRef));
   connectLiveState();
 });
 
@@ -219,6 +250,12 @@ function handleStateChange(changedKeys, state) {
   const delta = {};
   for (const k of changedKeys) delta[k] = state[k];
   console.log("[state]", changedKeys, delta);
+
+  // Repaint the robot whenever its localisation refreshes. amcl_pose is
+  // the only authoritative source in the map frame — see drawRobot().
+  if (canvasEl && changedKeys.includes("amcl_pose")) {
+    draw(canvasEl, ctxRef);
+  }
 }
 window.onStateChange = handleStateChange;
 
