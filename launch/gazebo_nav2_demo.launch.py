@@ -145,7 +145,9 @@ def generate_launch_description():
             }.items(),
         ),
 
-        # 4) Navigator (Nav2 Simple Commander).
+        # 4) Navigator — per-destination Nav2 driver. Subscribes to
+        # /destination (JSON String) and drives to whatever pose arrives.
+        # /start_navigation is no longer here; see (4b) below.
         Node(
             package='farm_twin_poc',
             executable='nav2_navigator',
@@ -168,6 +170,20 @@ def generate_launch_description():
                 'home_y':          -2.0,
                 'home_yaw':         0.0,
                 'use_sim_time':     use_sim_time,
+            }],
+        ),
+
+        # 4b) Mission dispatcher — owns the WAYPOINTS tour. Exposes
+        # /start_navigation (the entry point the user calls) and walks the
+        # list one /destination at a time, advancing on each
+        # /destination_reached ack from the navigator.
+        Node(
+            package='farm_twin_poc',
+            executable='mission_dispatcher_node',
+            name='mission_dispatcher_node',
+            output='screen',
+            parameters=[{
+                'use_sim_time': use_sim_time,
             }],
         ),
 

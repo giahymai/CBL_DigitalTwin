@@ -31,10 +31,11 @@ setup(
     license='MIT',
     entry_points={
         'console_scripts': [
-            'zone_monitor_node = farm_twin_poc.zone_monitor_node:main',
-            'dt_logger_node    = farm_twin_poc.dt_logger_node:main',
-            'nav2_navigator    = farm_twin_poc.navigator_node:main',
-            'web_server_node   = farm_twin_poc.web_server_node:main',
+            'zone_monitor_node       = farm_twin_poc.zone_monitor_node:main',
+            'dt_logger_node          = farm_twin_poc.dt_logger_node:main',
+            'nav2_navigator          = farm_twin_poc.navigator_node:main',
+            'mission_dispatcher_node = farm_twin_poc.mission_dispatcher_node:main',
+            'web_server_node         = farm_twin_poc.web_server_node:main',
         ],
     },
 )
