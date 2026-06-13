@@ -90,11 +90,15 @@
     #mission-section li.current { color: #1a73e8; font-weight: 700; }
 
     /* Twin Status section -------------------------------------------- */
-    /* Navigator state colours — orange for return-home is the only path
-       that hides a problem (low battery or manual /return_home). */
+    /* Navigator state colours — spray red / fertilize green match the
+       zone discs on the canvas; orange is plain manual return-home,
+       low_battery is the strong red call-out. */
     #twin-section .robot-idle           b { color: #777; }
     #twin-section .robot-navigating     b { color: #1a73e8; }
+    #twin-section .robot-spraying       b { color: #c22;   font-weight: 700; }
+    #twin-section .robot-fertilizing    b { color: #2c8c4a; font-weight: 700; }
     #twin-section .robot-returning_home b { color: #d9822b; font-weight: 700; }
+    #twin-section .robot-low_battery    b { color: #c22;   font-weight: 700; }
     #twin-section .row .mono { font-family: ui-monospace, SFMono-Regular,
                                Menlo, Consolas, monospace; font-size: 13px; }
 

@@ -104,7 +104,11 @@ class NavigatorNode(Node):
 
         # ---- state ----
         self._x = self._y = self._yaw = 0.0
-        self._state   = 'idle'          # idle | navigating | returning_home
+        # idle | navigating | spraying | fertilizing | returning_home
+        # spraying / fertilizing are reported while the spin-action is
+        # in progress at a destination — the UI can render distinct
+        # colours per phase without parsing the waypoint action.
+        self._state   = 'idle'
         self._current: Optional[str] = None
         self._completed: list = []      # destinations finished since startup
         self._busy = threading.Lock()
@@ -187,7 +191,7 @@ class NavigatorNode(Node):
                 self.get_logger().info(
                     f'[ARRIVED] {dest["name"]}' +
                     (f' — {action.upper()}' if action else ''))
-                self._spin_action()
+                self._spin_action(action=action)
                 self._completed.append(dest['name'])
                 success = True
             else:
@@ -291,8 +295,17 @@ class NavigatorNode(Node):
             self._current = None
             self._state = 'idle'
 
-    def _spin_action(self, revolutions: float = 1.0):
-        """Rotate ~360° in place to signal the spray/fertilize action."""
+    def _spin_action(self, action: str = '', revolutions: float = 1.0):
+        """Rotate ~360° in place to signal the spray/fertilize action.
+
+        While the spin (and the post-spin AMCL settle) runs, advertise
+        the action as the navigator state so the UI shows "Spraying" /
+        "Fertilizing" instead of a generic "Navigating".
+        """
+        if action == 'spray':
+            self._state = 'spraying'
+        elif action == 'fertilize':
+            self._state = 'fertilizing'
         target      = revolutions * 2.0 * math.pi
         accumulated = 0.0
         last_yaw    = self._yaw

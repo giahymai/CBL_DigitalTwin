@@ -282,6 +282,12 @@ class MissionDispatcherNode(Node):
                 'current':   current_name,
                 'awaiting':  self._awaiting,
                 'completed': list(self._completed),
+                # Battery snapshot + latch so the UI can flag the
+                # low-battery return-home without re-subscribing to
+                # /battery_state itself.
+                'battery_pct':  (round(self._battery_pct, 1)
+                                 if self._battery_seen else None),
+                'low_battery':  self._low_battery_triggered,
                 # Static list — sent on every tick so the UI doesn't need a
                 # separate config endpoint. Tiny payload (4 entries).
                 'waypoints': [

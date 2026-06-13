@@ -394,10 +394,12 @@ function handleStateChange(changedKeys, state) {
   if (changedKeys.includes("dt_status")) {
     updateActionHistory(state.dt_status);
   }
-  // The Twin Status panel pulls from navigator_status, amcl_pose, and
-  // dt_status, so refresh on any of them.
+  // The Twin Status panel pulls from navigator_status, amcl_pose,
+  // dispatcher_status (for the low_battery latch) and dt_status, so
+  // refresh on any of them.
   if (changedKeys.includes("navigator_status") ||
       changedKeys.includes("amcl_pose") ||
+      changedKeys.includes("dispatcher_status") ||
       changedKeys.includes("dt_status")) {
     updateTwinStatus();
   }
@@ -412,22 +414,36 @@ function handleStateChange(changedKeys, state) {
 function updateTwinStatus() {
   const panel = document.getElementById("twin-section");
   if (!panel) return;
-  const nav = STATE.navigator_status && STATE.navigator_status.json;
-  const dt  = STATE.dt_status        && STATE.dt_status.json;
+  const nav  = STATE.navigator_status  && STATE.navigator_status.json;
+  const disp = STATE.dispatcher_status && STATE.dispatcher_status.json;
+  const dt   = STATE.dt_status         && STATE.dt_status.json;
 
   // Robot state — recolour the row, not just the value, so the strong
-  // "returning home" colour reads at a glance.
+  // "returning home" / "low battery" colour reads at a glance.
   const stateRow = panel.querySelector('[data-row="robot-state"]');
   const stateEl  = panel.querySelector("[data-field=robot-state]");
   stateRow.classList.remove(
-      "robot-idle", "robot-navigating", "robot-returning_home");
-  const stateText = ({
+      "robot-idle", "robot-navigating", "robot-spraying",
+      "robot-fertilizing", "robot-returning_home", "robot-low_battery");
+  const labels = {
     idle:           "Idle",
     navigating:     "Navigating",
+    spraying:       "Spraying",
+    fertilizing:    "Fertilizing",
     returning_home: "Returning home",
-  })[nav && nav.state] || (nav && nav.state) || "—";
+  };
+  // The dispatcher latches low_battery independently of the navigator's
+  // state — surface it as its own status when the navigator is driving
+  // home because of it.
+  const lowBattery = !!(disp && disp.low_battery);
+  let stateKey  = (nav && nav.state) || "idle";
+  let stateText = labels[stateKey] || stateKey || "—";
+  if (lowBattery && stateKey === "returning_home") {
+    stateKey  = "low_battery";
+    stateText = "Low battery — returning home";
+  }
   stateEl.textContent = stateText;
-  if (nav && nav.state) stateRow.classList.add("robot-" + nav.state);
+  stateRow.classList.add("robot-" + stateKey);
 
   // Position — prefer AMCL (map frame). /odom drifts and the navigator
   // status carries odom too, so this is the authoritative one.
