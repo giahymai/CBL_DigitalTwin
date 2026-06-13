@@ -71,6 +71,9 @@ const ROBOT_STROKE    = "rgba(0, 0, 0, 0.65)";
 // the disc edge so it reads as a clear "this way is +X".
 const HEADING_LEN_M   = ROBOT_RADIUS_M * 1.35;
 const HEADING_STROKE  = "rgba(20, 20, 20, 0.95)";
+// LaserScan dots — small red dots at every returned (r, θ).
+const LIDAR_FILL      = "rgba(220, 35, 35, 0.78)";
+const LIDAR_DOT_PX    = 1.6;
 
 // Robot's spawn pose. Must match gazebo_nav2_demo.launch.py's x_pose /
 // y_pose (and nav2_sim.yaml's initial_pose). Used as the drawing
@@ -179,6 +182,40 @@ function drawShape(ctx, s) {
   }
 }
 
+function drawLidar(ctx) {
+  // /scan_filtered arrives in the robot's base_scan frame: each entry is
+  // a distance at angle_min + i * angle_increment, measured CCW from the
+  // sensor's +X axis. To plot in the map frame we add the robot's yaw
+  // and offset by its position. The 4 cm base_link -> base_scan offset
+  // on the TB3 Burger is ignored — invisible at this canvas scale.
+  const scan = STATE.scan;
+  if (!scan || !Array.isArray(scan.ranges) || scan.ranges.length === 0) return;
+  const pose = (STATE.amcl_pose && STATE.amcl_pose.pose) || INITIAL_POSE;
+  const px   = pose.position.x;
+  const py   = pose.position.y;
+  const yaw  = (pose.yaw != null) ? pose.yaw : 0.0;
+  const rMax = scan.range_max || Infinity;
+  const rMin = scan.range_min || 0.0;
+
+  ctx.save();
+  ctx.fillStyle = LIDAR_FILL;
+  for (let i = 0; i < scan.ranges.length; i++) {
+    const r = scan.ranges[i];
+    // null = NaN/Inf from the original message; out-of-range rings are
+    // not real obstacle returns either.
+    if (r == null || r <= rMin || r > rMax) continue;
+    const theta = scan.angle_min + i * scan.angle_increment + yaw;
+    const wx = px + r * Math.cos(theta);
+    const wy = py + r * Math.sin(theta);
+    const [cx, cy] = worldToCanvas(wx, wy);
+    // fillRect with a half-pixel offset is ~3x faster than arc() and
+    // visually indistinguishable at this dot size.
+    ctx.fillRect(cx - LIDAR_DOT_PX, cy - LIDAR_DOT_PX,
+                 LIDAR_DOT_PX * 2, LIDAR_DOT_PX * 2);
+  }
+  ctx.restore();
+}
+
 function drawRobot(ctx) {
   // AMCL pose is in the map frame, which is what the canvas is in. /odom
   // lives in the odom frame and would render at the wrong spot without
@@ -226,6 +263,7 @@ function draw(canvas, ctx) {
   ctx.fillRect(0, 0, W, H);
   drawGrid(ctx, canvas);
   for (const s of MAP.shapes) drawShape(ctx, s);
+  drawLidar(ctx);
   drawRobot(ctx);
 }
 
@@ -282,9 +320,11 @@ function handleStateChange(changedKeys, state) {
   for (const k of changedKeys) delta[k] = state[k];
   console.log("[state]", changedKeys, delta);
 
-  // Repaint the robot whenever its localisation refreshes. amcl_pose is
-  // the only authoritative source in the map frame — see drawRobot().
-  if (canvasEl && changedKeys.includes("amcl_pose")) {
+  // Repaint when the pose OR the scan moves — drawLidar uses both
+  // (range data from /scan_filtered, origin/yaw from /amcl_pose), so
+  // either changing should refresh the canvas.
+  if (canvasEl && (changedKeys.includes("amcl_pose") ||
+                   changedKeys.includes("scan"))) {
     draw(canvasEl, ctxRef);
   }
 }
