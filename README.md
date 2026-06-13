@@ -157,6 +157,24 @@ action. To move a zone, edit it in **all three** places: `zone_monitor_node.py`
 
 ## Setup & Run (Gazebo, at home / in Docker)
 
+### 0. Start the Docker container (at home, every session)
+1. Open **Docker Desktop** on Windows.
+2. Open **Ubuntu** from the Start Menu (not PowerShell).
+3. Start the container (`--net=host` so the browser on Windows reaches rosbridge,
+   and ports 8080/9090 are shared via host networking):
+```bash
+docker run --rm -it --name turtlebot3_container --net=host \
+  -e DISPLAY=$DISPLAY \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v /home/c2irr10/turtlebot3_ws:/ws \
+  --user $(id -u):$(id -g) turtlebot3_ws bash
+```
+**Every additional terminal** attaches to the same container, then sources (step 1):
+```bash
+docker exec -it turtlebot3_container bash
+```
+> `Error: No such container` → the container isn't running. Repeat step 3.
+
 ### 1. Sourcing (every new terminal)
 ```bash
 cd /ws                                   # or ~/turtlebot3_ws
