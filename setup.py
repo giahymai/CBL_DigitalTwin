@@ -36,6 +36,7 @@ setup(
             'nav2_navigator          = farm_twin_poc.navigator_node:main',
             'mission_dispatcher_node = farm_twin_poc.mission_dispatcher_node:main',
             'web_server_node         = farm_twin_poc.web_server_node:main',
+            'battery_sim_node        = farm_twin_poc.battery_sim_node:main',
         ],
     },
 )

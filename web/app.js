@@ -244,8 +244,57 @@ window.addEventListener("DOMContentLoaded", () => {
   ctxRef   = canvasEl.getContext("2d");
   resizeCanvas(canvasEl, ctxRef);
   window.addEventListener("resize", () => resizeCanvas(canvasEl, ctxRef));
+  wireStartButton();
   connectLiveState();
 });
+
+// ---------------------------------------------------------------------------
+// Start Navigation button — POSTs to /api/start_navigation, which calls the
+// /start_navigation ROS service on the mission dispatcher. Disabled in
+// standalone (file://) mode since there's no server to talk to.
+// ---------------------------------------------------------------------------
+
+function wireStartButton() {
+  const btn = document.getElementById("start-nav-btn");
+  if (!btn) return;
+  if (location.protocol === "file:") {
+    btn.disabled = true;
+    btn.title = "Open via the web_server_node — file:// has no API";
+    btn.textContent = "Start (server only)";
+    return;
+  }
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = "Starting…";
+    try {
+      const r = await fetch("/api/start_navigation", { method: "POST" });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok || !body.success) {
+        // Brief inline error; the dispatcher_status SSE will overwrite this
+        // as soon as the next status tick arrives.
+        btn.textContent = body.message
+            ? `Failed: ${body.message}`
+            : `Failed (HTTP ${r.status})`;
+        setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
+      }
+      // On success we leave the button disabled; the dispatcher_status
+      // listener below will re-enable it when the mission ends.
+    } catch (err) {
+      btn.textContent = `Error: ${err.message || err}`;
+      setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
+    }
+  });
+}
+
+// Toggle the button enabled/disabled from dispatcher_status. Called from
+// updateMissionPanel below so we don't duplicate the parse.
+function setStartButtonRunning(running) {
+  const btn = document.getElementById("start-nav-btn");
+  if (!btn || location.protocol === "file:") return;
+  btn.disabled = running;
+  btn.textContent = running ? "Running…" : "Start Navigation";
+}
 
 // ---------------------------------------------------------------------------
 // Live state — Server-Sent Events from web_server_node
@@ -290,6 +339,40 @@ function handleStateChange(changedKeys, state) {
   if (changedKeys.includes("dispatcher_status")) {
     updateMissionPanel(state.dispatcher_status);
   }
+  if (changedKeys.includes("battery")) {
+    updateBatteryDisplay(state.battery);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Battery row — driven by /battery_state (BatteryState dict). The web
+// server caches msg.percentage as 0..1; we render it as 0..100 % and
+// colour-code by the same thresholds the navigator uses for return-home.
+// ---------------------------------------------------------------------------
+
+function updateBatteryDisplay(battery) {
+  const panel = document.getElementById("mission-panel");
+  if (!panel) return;
+  const row = panel.querySelector('[data-row="battery"]');
+  const el  = panel.querySelector("[data-field=battery]");
+  if (!row || !el) return;
+  // Clear previous level class regardless of validity.
+  row.classList.remove("battery-good", "battery-warn", "battery-low");
+
+  if (!battery || battery.percentage == null) {
+    el.textContent = "—";
+    return;
+  }
+  const pct = battery.percentage * 100;
+  const v   = battery.voltage;
+  el.textContent = (v != null && !isNaN(v))
+      ? `${pct.toFixed(0)}% (${v.toFixed(1)} V)`
+      : `${pct.toFixed(0)}%`;
+  // Match navigator_node's 20 % return-home threshold; "warn" is just a
+  // visual heads-up before that kicks in.
+  if      (pct < 20) row.classList.add("battery-low");
+  else if (pct < 50) row.classList.add("battery-warn");
+  else               row.classList.add("battery-good");
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +404,7 @@ function updateMissionPanel(wrapped) {
       `${s.completed ? s.completed.length : 0} / ${s.total ?? "—"}`;
   panel.querySelector("[data-field=current]").textContent  =
       s.current || "—";
+  setStartButtonRunning(!!s.running);
 
   // Waypoint list — completed = green checkmark, current = blue arrow,
   // pending = grey bullet.

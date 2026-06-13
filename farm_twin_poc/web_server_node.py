@@ -87,6 +87,7 @@ import math
 import os
 import queue
 import threading
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional
@@ -109,6 +110,7 @@ from geometry_msgs.msg import (
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from sensor_msgs.msg import BatteryState, Imu
 from std_msgs.msg import String
+from std_srvs.srv import Trigger
 
 
 # ---------------------------------------------------------------------------
@@ -344,6 +346,12 @@ class WebServerNode(Node):
         self.create_subscription(String,
             '/dispatcher/status', self._cb_dispatcher_status, 10)
 
+        # Service client for the UI button → mission_dispatcher_node.
+        # The client lives on this node's default callback group; the call
+        # is dispatched async and awaited in the HTTP handler thread.
+        self._start_nav_client = self.create_client(
+            Trigger, '/start_navigation')
+
         # Static web root — created by setup.py from <pkg_root>/web/.
         self._web_root = os.path.join(
             get_package_share_directory('farm_twin_poc'), 'web')
@@ -386,6 +394,24 @@ class WebServerNode(Node):
             self._httpd.server_close()
         except Exception:
             pass
+
+    def call_start_navigation(self, timeout_s: float = 5.0) -> dict:
+        """Call /start_navigation. Spinning is done by main()'s executor
+        in another thread, so we just submit async and poll the future."""
+        if not self._start_nav_client.service_is_ready():
+            # Give it a brief chance — the user may have hit the button
+            # before the dispatcher came up.
+            if not self._start_nav_client.wait_for_service(timeout_sec=1.0):
+                return {'success': False,
+                        'message': '/start_navigation not available'}
+        future = self._start_nav_client.call_async(Trigger.Request())
+        deadline = time.monotonic() + timeout_s
+        while not future.done():
+            if time.monotonic() > deadline:
+                return {'success': False, 'message': 'service call timed out'}
+            time.sleep(0.02)
+        res = future.result()
+        return {'success': bool(res.success), 'message': str(res.message)}
 
     # -- SSE pub/sub API used by the HTTP handler ---------------------------
 
@@ -539,11 +565,26 @@ def _make_handler(node: 'WebServerNode', web_root: str):
                 return self._send_json(data)
             return self._send_static(path)
 
+        def do_POST(self):
+            path = self.path.split('?', 1)[0]
+            if path == '/api/start_navigation':
+                # Read & discard any request body so the connection can be
+                # reused — the UI sends none, but a curl test might.
+                length = int(self.headers.get('Content-Length') or 0)
+                if length > 0:
+                    self.rfile.read(length)
+                result = node.call_start_navigation()
+                status = (HTTPStatus.OK if result['success']
+                          else HTTPStatus.SERVICE_UNAVAILABLE)
+                return self._send_json(result, status=status)
+            return self._send_error(
+                HTTPStatus.NOT_FOUND, f'no POST handler for {path}')
+
         # -- helpers ----------------------------------------------------
 
-        def _send_json(self, obj):
+        def _send_json(self, obj, status: HTTPStatus = HTTPStatus.OK):
             body = json.dumps(obj, allow_nan=False).encode('utf-8')
-            self.send_response(HTTPStatus.OK)
+            self.send_response(status)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Content-Length', str(len(body)))
             self.send_header('Cache-Control', 'no-store')

@@ -187,6 +187,19 @@ def generate_launch_description():
             }],
         ),
 
+        # 4c) Battery simulator — Gazebo doesn't publish /battery_state,
+        # so this fakes one. The navigator subscribes to it for the
+        # return-home threshold; the web UI shows the level.
+        Node(
+            package='farm_twin_poc',
+            executable='battery_sim_node',
+            name='battery_sim_node',
+            output='screen',
+            parameters=[{
+                'use_sim_time': use_sim_time,
+            }],
+        ),
+
         # 5) Zone monitor + DT logger (so /farm_action fires at zones).
         Node(
             package='farm_twin_poc',
