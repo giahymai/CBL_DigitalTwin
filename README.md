@@ -73,14 +73,6 @@ Farm zones (in `worlds/new_world.world`, also encoded in `FARM_ZONES` /
 - Python 3 (only the standard library — the helper scripts and the web
   server use nothing else)
 
-If you run inside the `turtlebot3_container` Docker image, export this
-before every launch — the image ships ABI-mismatched FastDDS packages that
-crash Nav2 unless you switch RMW:
-
-```bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-```
-
 ---
 
 ## Running in Docker (Windows + WSL2)
@@ -174,11 +166,10 @@ takes about a minute end-to-end.
 ### 1. Terminal A — start the Physical Entity
 
 ```bash
-cd ~/turtlebot3_ws
+cd /ws
 source install/setup.bash
 export TURTLEBOT3_MODEL=burger
 ros2 launch farm_twin_poc physical_entity.launch.py
-# add headless:=true if you have no GPU (Docker-in-WSL, etc.)
 ```
 
 **Wait** until the navigator logs:
@@ -193,7 +184,7 @@ you'll see the TurtleBot3 spawned at `(1.5, −2.0)` inside the farm.
 ### 2. Terminal B — start the Digital Entity
 
 ```bash
-cd ~/turtlebot3_ws
+cd /ws
 source install/setup.bash
 ros2 launch farm_twin_poc digital_entity.launch.py
 ```
