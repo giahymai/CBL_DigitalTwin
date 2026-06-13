@@ -62,15 +62,24 @@ const MAP = {
 // walls from sitting flush against the canvas edge.
 const PADDING_M = 0.5;
 
+// Canvas theme — dark, to match style.css. Kept here (not CSS) because the
+// canvas is painted imperatively. Mirror these if the page theme changes.
+const THEME = {
+  canvasBg:    "#0d1117",            // matches --bg
+  grid:        "rgba(255,255,255,0.05)",
+  axis:        "rgba(255,255,255,0.14)",
+  shapeStroke: "rgba(255,255,255,0.22)",
+};
+
 // TurtleBot3 Burger footprint — 138 mm wide chassis ≈ 0.069 m radius.
 // Drawn as a single filled disc to match what the LiDAR plane sees.
 const ROBOT_RADIUS_M  = 0.069;
-const ROBOT_FILL      = "rgba(60, 130, 220, 0.92)";
-const ROBOT_STROKE    = "rgba(0, 0, 0, 0.65)";
+const ROBOT_FILL      = "rgba(77, 159, 255, 0.95)";   // matches --accent
+const ROBOT_STROKE    = "rgba(230, 237, 243, 0.85)";  // light, reads on dark
 // Heading indicator — a line from disc centre forward, slightly past
 // the disc edge so it reads as a clear "this way is +X".
 const HEADING_LEN_M   = ROBOT_RADIUS_M * 1.35;
-const HEADING_STROKE  = "rgba(20, 20, 20, 0.95)";
+const HEADING_STROKE  = "rgba(245, 248, 252, 0.95)";
 
 // Robot's spawn pose. Must match physical_entity.launch.py's x_pose /
 // y_pose (and nav2_sim.yaml's initial_pose). Used as the drawing
@@ -119,7 +128,7 @@ function drawGrid(ctx, canvas) {
   const W = canvas.width  / dpr;
   const H = canvas.height / dpr;
   ctx.save();
-  ctx.strokeStyle = "rgba(0,0,0,0.08)";
+  ctx.strokeStyle = THEME.grid;
   ctx.lineWidth = 1;
   const x0 = Math.floor(b.min_x - PADDING_M);
   const x1 = Math.ceil (b.max_x + PADDING_M);
@@ -140,7 +149,7 @@ function drawGrid(ctx, canvas) {
     ctx.stroke();
   }
   // Axes — solid through world (0, 0).
-  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.strokeStyle = THEME.axis;
   ctx.lineWidth = 1.5;
   const [ox, oy] = worldToCanvas(0, 0);
   ctx.beginPath(); ctx.moveTo(ox, 0); ctx.lineTo(ox, H); ctx.stroke();
@@ -150,7 +159,7 @@ function drawGrid(ctx, canvas) {
 
 function drawShape(ctx, s) {
   ctx.fillStyle   = s.color;
-  ctx.strokeStyle = "rgba(0,0,0,0.5)";
+  ctx.strokeStyle = THEME.shapeStroke;
   ctx.lineWidth   = 1;
 
   if (s.type === "box") {
@@ -222,7 +231,7 @@ function draw(canvas, ctx) {
   const W = canvas.width  / dpr;
   const H = canvas.height / dpr;
   ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = "#fafafa";
+  ctx.fillStyle = THEME.canvasBg;
   ctx.fillRect(0, 0, W, H);
   drawGrid(ctx, canvas);
   for (const s of MAP.shapes) drawShape(ctx, s);
@@ -544,12 +553,15 @@ function updateBatteryDisplay(battery) {
   if (!panel) return;
   const row = panel.querySelector('[data-row="battery"]');
   const el  = panel.querySelector("[data-field=battery]");
+  const bar = panel.querySelector("[data-field=battery-bar]");
   if (!row || !el) return;
   // Clear previous level class regardless of validity.
   row.classList.remove("battery-good", "battery-warn", "battery-low");
+  if (bar) bar.classList.remove("battery-good", "battery-warn", "battery-low");
 
   if (!battery || battery.percentage == null) {
     el.textContent = "—";
+    if (bar) bar.style.width = "0%";
     return;
   }
   const pct = battery.percentage * 100;
@@ -559,9 +571,12 @@ function updateBatteryDisplay(battery) {
       : `${pct.toFixed(0)}%`;
   // Match navigator_node's 20 % return-home threshold; "warn" is just a
   // visual heads-up before that kicks in.
-  if      (pct < 20) row.classList.add("battery-low");
-  else if (pct < 50) row.classList.add("battery-warn");
-  else               row.classList.add("battery-good");
+  const level = pct < 20 ? "battery-low" : pct < 50 ? "battery-warn" : "battery-good";
+  row.classList.add(level);
+  if (bar) {
+    bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+    bar.classList.add(level);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -589,8 +604,15 @@ function updateMissionPanel(wrapped) {
   panel.classList.remove("state-running", "state-complete", "state-aborted");
   if (s.state && s.state !== "idle") panel.classList.add("state-" + s.state);
   panel.querySelector("[data-field=state]").textContent    = stateText;
+  const doneCount = s.completed ? s.completed.length : 0;
   panel.querySelector("[data-field=progress]").textContent =
-      `${s.completed ? s.completed.length : 0} / ${s.total ?? "—"}`;
+      `${doneCount} / ${s.total ?? "—"}`;
+  // Progress meter — fraction of waypoints completed.
+  const bar = panel.querySelector("[data-field=progress-bar]");
+  if (bar) {
+    const frac = s.total ? Math.max(0, Math.min(1, doneCount / s.total)) : 0;
+    bar.style.width = `${frac * 100}%`;
+  }
   panel.querySelector("[data-field=current]").textContent  =
       s.current || "—";
   setStartButtonRunning(!!s.running);
@@ -611,8 +633,19 @@ function updateMissionPanel(wrapped) {
 }
 window.onStateChange = handleStateChange;
 
+// Header connection pill — "Live" (green) when the SSE stream is open,
+// "Offline" (red) once it drops, "Standalone" in file:// mode.
+function setConnState(state) {
+  const el = document.querySelector("[data-field=conn]");
+  if (!el) return;
+  el.classList.remove("online", "offline");
+  if (state === "online")  { el.classList.add("online");  el.lastChild.textContent = "Live"; }
+  else if (state === "file") {                               el.lastChild.textContent = "Standalone"; }
+  else                     { el.classList.add("offline"); el.lastChild.textContent = "Offline"; }
+}
+
 function connectLiveState() {
-  if (location.protocol === "file:") return;   // standalone mode, no server
+  if (location.protocol === "file:") { setConnState("file"); return; }  // no server
   const es = new EventSource("/api/stream");
 
   es.addEventListener("snapshot", (e) => {
@@ -620,6 +653,8 @@ function connectLiveState() {
     for (const k of Object.keys(snap)) STATE[k] = snap[k];
     window.onStateChange(Object.keys(snap), STATE);
   });
+
+  es.onopen = () => setConnState("online");
 
   es.onmessage = (e) => {
     const delta = JSON.parse(e.data);
@@ -629,7 +664,8 @@ function connectLiveState() {
   };
 
   es.onerror = () => {
-    // The browser auto-reconnects with backoff; nothing to do but log.
+    // The browser auto-reconnects with backoff; reflect the drop in the UI.
+    setConnState("offline");
     console.warn("/api/stream disconnected, will retry");
   };
 }

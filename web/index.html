@@ -5,132 +5,23 @@
   <title>Farm Twin — Map</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="style.css">
-  <!-- Minimal inline reset so the page is usable even with an empty
-       style.css; move into style.css whenever you want. -->
-  <style>
-    html, body { margin: 0; padding: 0; height: 100%; background: #eee;
-                 font-family: -apple-system, system-ui, "Segoe UI", sans-serif; }
-    #map { display: block; width: 100vw; height: 100vh; }
-
-    /* Single side panel hosting Mission / Twin Status / Actions sections.
-       Positioned along the left edge so the canvas stays uncluttered.
-       Whole card scrolls if a section grows past the viewport. */
-    #side-panel {
-      position: absolute; top: 16px; left: 16px;
-      background: rgba(255, 255, 255, 0.95);
-      border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
-      width: 280px; max-height: calc(100vh - 32px);
-      display: flex; flex-direction: column;
-      overflow: hidden;                /* sub-sections handle their own scroll */
-      font-size: 14px; line-height: 1.45;
-      pointer-events: auto;            /* form controls inside need clicks */
-    }
-    /* Each section is a titled block; the last one (actions) stretches and
-       scrolls so the panel never overflows the viewport. */
-    #side-panel .section {
-      padding: 14px 18px;
-      border-top: 1px solid #eee;
-    }
-    #side-panel .section:first-child { border-top: 0; }
-    #side-panel h2 { margin: 0 0 10px 0; font-size: 14px; font-weight: 700;
-                     text-transform: uppercase; letter-spacing: 0.5px;
-                     color: #333; }
-    #side-panel .row { color: #555; }
-    #side-panel .row b { color: #222; font-weight: 600; }
-
-    /* Mission section ------------------------------------------------ */
-    #mission-section button { pointer-events: auto; }
-    #start-nav-btn {
-      display: block; width: 100%; margin-top: 10px; padding: 8px 12px;
-      font: inherit; font-weight: 600; color: #fff;
-      background: #1a73e8; border: 0; border-radius: 5px;
-      cursor: pointer; transition: background 120ms ease;
-    }
-    #start-nav-btn:hover:not(:disabled)  { background: #1763c8; }
-    #start-nav-btn:active:not(:disabled) { background: #155bb5; }
-    #start-nav-btn:disabled {
-      background: #b9c5d6; cursor: not-allowed;
-    }
-    /* Manual battery override row — small inline form. */
-    .battery-set {
-      display: flex; gap: 6px; align-items: center;
-      margin-top: 10px; padding-top: 8px;
-      border-top: 1px solid #eee;
-    }
-    .battery-set label { color: #444; font-size: 12.5px; }
-    .battery-set input {
-      width: 60px; padding: 5px 6px; font: inherit; font-size: 13px;
-      border: 1px solid #ccc; border-radius: 4px; outline: none;
-      transition: border-color 120ms ease;
-    }
-    .battery-set input:focus { border-color: #1a73e8; }
-    .battery-set input.invalid { border-color: #c22; }
-    .battery-set button {
-      padding: 5px 12px; font: inherit; font-size: 13px; font-weight: 600;
-      color: #fff; background: #1a73e8; border: 0; border-radius: 4px;
-      cursor: pointer;
-    }
-    .battery-set button:hover:not(:disabled) { background: #1763c8; }
-    .battery-set button:disabled {
-      background: #b9c5d6; cursor: not-allowed;
-    }
-    #mission-section .state-running   b { color: #1a73e8; }
-    #mission-section .state-complete  b { color: #2c8c4a; }
-    #mission-section .state-aborted   b { color: #c22; }
-    /* Battery row colour by % left. */
-    #mission-section .battery-good b { color: #2c8c4a; }
-    #mission-section .battery-warn b { color: #d9822b; }
-    #mission-section .battery-low  b { color: #c22; font-weight: 700; }
-    #mission-section ul { list-style: none; margin: 10px 0 0 0; padding: 0;
-                          border-top: 1px solid #eee; padding-top: 8px; }
-    #mission-section li { padding: 2px 0; color: #999; font-family: ui-monospace,
-                          SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
-    #mission-section li.done    { color: #2c8c4a; }
-    #mission-section li.current { color: #1a73e8; font-weight: 700; }
-
-    /* Twin Status section -------------------------------------------- */
-    /* Navigator state colours — spray red / fertilize green match the
-       zone discs on the canvas; orange is plain manual return-home,
-       low_battery is the strong red call-out. */
-    #twin-section .robot-idle           b { color: #777; }
-    #twin-section .robot-navigating     b { color: #1a73e8; }
-    #twin-section .robot-spraying       b { color: #c22;   font-weight: 700; }
-    #twin-section .robot-fertilizing    b { color: #2c8c4a; font-weight: 700; }
-    #twin-section .robot-returning_home b { color: #d9822b; font-weight: 700; }
-    #twin-section .robot-low_battery    b { color: #c22;   font-weight: 700; }
-    #twin-section .row .mono { font-family: ui-monospace, SFMono-Regular,
-                               Menlo, Consolas, monospace; font-size: 13px; }
-
-    /* Actions section ------------------------------------------------ */
-    #actions-section { display: flex; flex-direction: column;
-                       flex: 1 1 auto; min-height: 0; }
-    #actions-section .summary { color: #555; margin-bottom: 8px;
-                                border-bottom: 1px solid #eee; padding-bottom: 6px; }
-    #actions-section .summary b { color: #222; font-weight: 600; }
-    #actions-section ol { list-style: none; margin: 0; padding: 0;
-                          overflow-y: auto; flex: 1 1 auto; min-height: 0;
-                          max-height: 40vh; }
-    #actions-section li { padding: 4px 0; display: flex; gap: 8px;
-                          font-family: ui-monospace, SFMono-Regular, Menlo,
-                          Consolas, monospace; font-size: 12.5px; color: #444; }
-    #actions-section li b      { flex: 0 0 70px; font-weight: 700; }
-    #actions-section li .zone  { flex: 1 1 auto; color: #444; }
-    #actions-section li .time  { flex: 0 0 auto; color: #999; }
-    #actions-section li.spray     b { color: #c22; }
-    #actions-section li.fertilize b { color: #2c8c4a; }
-    #actions-section .empty { color: #999; font-style: italic; padding: 6px 0; }
-  </style>
 </head>
 <body>
   <canvas id="map"></canvas>
   <aside id="side-panel">
+    <header id="panel-header">
+      <span class="brand">Farm Twin</span>
+      <span class="conn" data-field="conn"><span class="conn-dot"></span>Offline</span>
+    </header>
+
     <section id="mission-section" class="section">
       <h2>Mission</h2>
-      <div class="row" data-row="battery">Battery:&nbsp;<b data-field="battery">—</b></div>
-      <div class="row">Status:&nbsp;<b data-field="state">—</b></div>
-      <div class="row">Progress:&nbsp;<b data-field="progress">—</b></div>
-      <div class="row">Driving to:&nbsp;<b data-field="current">—</b></div>
+      <div class="row"><span class="row-label">Status</span><b data-field="state" class="badge">—</b></div>
+      <div class="row" data-row="battery"><span class="row-label">Battery</span><b data-field="battery">—</b></div>
+      <div class="meter"><div class="meter-fill" data-field="battery-bar"></div></div>
+      <div class="row"><span class="row-label">Progress</span><b data-field="progress">—</b></div>
+      <div class="meter"><div class="meter-fill" data-field="progress-bar"></div></div>
+      <div class="row"><span class="row-label">Driving to</span><b data-field="current">—</b></div>
       <ul data-field="waypoints"></ul>
       <button id="start-nav-btn" type="button">Start Navigation</button>
       <div class="battery-set">
@@ -140,18 +31,21 @@
         <button id="set-battery-btn" type="button">Apply</button>
       </div>
     </section>
+
     <section id="twin-section" class="section">
       <h2>Twin Status</h2>
-      <div class="row" data-row="robot-state">Robot:&nbsp;<b data-field="robot-state">—</b></div>
-      <div class="row">Position:&nbsp;<b data-field="robot-position" class="mono">—</b></div>
-      <div class="row">Goal:&nbsp;<b data-field="robot-goal">—</b></div>
-      <div class="row">Sync error:&nbsp;<b data-field="sync-error" class="mono">—</b></div>
-      <div class="row">Zones visited:&nbsp;<b data-field="zones-visited" class="mono">—</b></div>
+      <div class="row" data-row="robot-state"><span class="row-label">Robot</span><b data-field="robot-state" class="badge">—</b></div>
+      <div class="row"><span class="row-label">Position</span><b data-field="robot-position" class="mono">—</b></div>
+      <div class="row"><span class="row-label">Goal</span><b data-field="robot-goal">—</b></div>
+      <div class="row"><span class="row-label">Sync error</span><b data-field="sync-error" class="mono">—</b></div>
+      <div class="row"><span class="row-label">Zones visited</span><b data-field="zones-visited" class="mono">—</b></div>
     </section>
+
     <section id="actions-section" class="section">
       <h2>Actions</h2>
       <div class="summary">
-        <b data-field="spray-count">0</b>&nbsp;spray&nbsp;·&nbsp;<b data-field="fert-count">0</b>&nbsp;fertilize
+        <div class="stat spray"><b data-field="spray-count">0</b><span>Spray</span></div>
+        <div class="stat fertilize"><b data-field="fert-count">0</b><span>Fertilize</span></div>
       </div>
       <ol data-field="action-list"></ol>
     </section>

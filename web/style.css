@@ -1,0 +1,240 @@
+/* Farm Twin — web dashboard theme (dark).
+ *
+ * All dashboard styling lives here; index.html only carries the markup.
+ * Canvas colours (map background, grid, robot, walls) are set in app.js
+ * because the canvas is painted imperatively — see the THEME block there.
+ *
+ * Palette is exposed as CSS custom properties so a future light theme can
+ * be added by overriding :root (or a [data-theme] attribute).
+ */
+
+:root {
+  --bg:            #0d1117;   /* page / canvas backdrop          */
+  --panel:         #161b22;   /* side-panel surface              */
+  --panel-2:       #1c2330;   /* nested surfaces (meters, lists) */
+  --border:        #283041;   /* hairlines between sections      */
+  --border-soft:   #20283590; /* subtle inner dividers           */
+
+  --text:          #e6edf3;   /* primary text / values           */
+  --text-dim:      #9aa7b8;   /* labels                          */
+  --text-faint:    #6b7787;   /* timestamps, pending items       */
+
+  --accent:        #4d9fff;   /* navigating / primary action     */
+  --accent-strong: #2f86f0;
+  --spray:         #ff5d5d;   /* spray zones / spraying state    */
+  --fert:          #3fd97f;   /* fertilize zones / fertilizing   */
+  --warn:          #f5a623;   /* battery warn / returning home   */
+  --danger:        #ff4d4d;   /* low battery                     */
+
+  --radius:        10px;
+  --radius-sm:     6px;
+  --shadow:        0 8px 28px rgba(0, 0, 0, 0.45);
+  --font:          -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  --mono:          ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+#map { display: block; width: 100vw; height: 100vh; }
+
+/* ── Side panel ──────────────────────────────────────────────────────── */
+#side-panel {
+  position: absolute; top: 16px; left: 16px;
+  width: 296px; max-height: calc(100vh - 32px);
+  display: flex; flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;                 /* sub-sections handle their own scroll */
+  font-size: 14px; line-height: 1.45;
+  pointer-events: auto;
+}
+
+/* Header — brand + live connection indicator. */
+#panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 18px;
+  background: linear-gradient(180deg, #1b2330 0%, #161b22 100%);
+  border-bottom: 1px solid var(--border);
+}
+#panel-header .brand {
+  font-weight: 700; font-size: 14px; letter-spacing: 0.3px;
+  color: var(--text);
+}
+#panel-header .brand::before {
+  content: "🌱"; margin-right: 7px; font-size: 14px;
+}
+.conn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.4px; color: var(--text-faint);
+}
+.conn-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-faint); transition: background 200ms ease;
+}
+.conn.online             { color: var(--fert); }
+.conn.online  .conn-dot  { background: var(--fert);
+                           box-shadow: 0 0 0 3px rgba(63, 217, 127, 0.18); }
+.conn.offline            { color: var(--danger); }
+.conn.offline .conn-dot  { background: var(--danger); }
+
+/* Sections ───────────────────────────────────────────────────────────── */
+#side-panel .section { padding: 15px 18px; border-top: 1px solid var(--border); }
+#side-panel h2 {
+  margin: 0 0 12px 0; font-size: 11.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-dim);
+}
+
+/* Label-left / value-right rows for clean alignment. */
+#side-panel .row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; padding: 3px 0; color: var(--text-dim);
+}
+#side-panel .row .row-label { font-size: 13px; }
+#side-panel .row b {
+  color: var(--text); font-weight: 600; text-align: right;
+}
+#side-panel .mono { font-family: var(--mono); font-size: 12.5px; }
+
+/* Status badges (mission state + robot state) ───────────────────────────*/
+.badge {
+  display: inline-block; padding: 2px 9px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; line-height: 1.5;
+  background: rgba(255, 255, 255, 0.07); color: var(--text-dim);
+}
+
+/* Meters (battery + mission progress) ──────────────────────────────────-*/
+.meter {
+  height: 7px; margin: 7px 0 4px; border-radius: 999px;
+  background: var(--panel-2); overflow: hidden;
+}
+.meter-fill {
+  height: 100%; width: 0%; border-radius: 999px;
+  background: var(--accent);
+  transition: width 350ms ease, background 250ms ease;
+}
+
+/* ── Mission section ─────────────────────────────────────────────────── */
+#mission-section.state-running   .badge { background: rgba(77,159,255,0.18);  color: var(--accent); }
+#mission-section.state-complete  .badge { background: rgba(63,217,127,0.18);  color: var(--fert);   }
+#mission-section.state-aborted   .badge { background: rgba(255,77,77,0.18);   color: var(--danger); }
+
+/* Battery value + meter colour by % left. */
+#mission-section .battery-good b   { color: var(--fert); }
+#mission-section .battery-warn b   { color: var(--warn); }
+#mission-section .battery-low  b   { color: var(--danger); }
+.meter-fill.battery-good { background: var(--fert); }
+.meter-fill.battery-warn { background: var(--warn); }
+.meter-fill.battery-low  { background: var(--danger); }
+
+/* Waypoint checklist. */
+#mission-section ul {
+  list-style: none; margin: 12px 0 0 0; padding: 10px 0 0 0;
+  border-top: 1px solid var(--border-soft);
+}
+#mission-section li {
+  padding: 3px 0; color: var(--text-faint);
+  font-family: var(--mono); font-size: 12.5px;
+}
+#mission-section li.done    { color: var(--fert); }
+#mission-section li.current { color: var(--accent); font-weight: 700; }
+
+/* Start Navigation button. */
+#start-nav-btn {
+  display: block; width: 100%; margin-top: 14px; padding: 9px 12px;
+  font: inherit; font-weight: 600; color: #fff;
+  background: var(--accent-strong); border: 0; border-radius: var(--radius-sm);
+  cursor: pointer; transition: background 120ms ease, transform 60ms ease;
+}
+#start-nav-btn:hover:not(:disabled)  { background: var(--accent); }
+#start-nav-btn:active:not(:disabled) { transform: translateY(1px); }
+#start-nav-btn:disabled {
+  background: #2a323f; color: #7c8694; cursor: not-allowed;
+}
+
+/* Manual battery override — small inline form. */
+.battery-set {
+  display: flex; gap: 6px; align-items: center;
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-soft);
+}
+.battery-set label { color: var(--text-dim); font-size: 12.5px; white-space: nowrap; }
+.battery-set input {
+  width: 100%; min-width: 0; padding: 6px 8px; font: inherit; font-size: 13px;
+  color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.battery-set input::placeholder { color: var(--text-faint); }
+.battery-set input:focus  { border-color: var(--accent);
+                            box-shadow: 0 0 0 3px rgba(77,159,255,0.15); }
+.battery-set input.invalid{ border-color: var(--danger);
+                            box-shadow: 0 0 0 3px rgba(255,77,77,0.15); }
+.battery-set button {
+  padding: 6px 13px; font: inherit; font-size: 13px; font-weight: 600;
+  color: #fff; background: var(--accent-strong);
+  border: 0; border-radius: var(--radius-sm); cursor: pointer;
+  transition: background 120ms ease;
+}
+.battery-set button:hover:not(:disabled) { background: var(--accent); }
+.battery-set button:disabled { background: #2a323f; color: #7c8694; cursor: not-allowed; }
+
+/* ── Twin Status section ─────────────────────────────────────────────── */
+/* Robot-state badge colours — match the zone discs on the canvas. */
+#twin-section .robot-idle           .badge { color: var(--text-dim); }
+#twin-section .robot-navigating     .badge { background: rgba(77,159,255,0.18);  color: var(--accent); }
+#twin-section .robot-spraying       .badge { background: rgba(255,93,93,0.18);   color: var(--spray);  }
+#twin-section .robot-fertilizing    .badge { background: rgba(63,217,127,0.18);  color: var(--fert);   }
+#twin-section .robot-returning_home .badge { background: rgba(245,166,35,0.18);  color: var(--warn);   }
+#twin-section .robot-low_battery    .badge { background: rgba(255,77,77,0.20);   color: var(--danger); }
+
+/* ── Actions section ─────────────────────────────────────────────────── */
+#actions-section { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+#actions-section .summary {
+  display: flex; gap: 8px; margin-bottom: 10px;
+}
+#actions-section .stat {
+  flex: 1 1 0; padding: 8px 10px; border-radius: var(--radius-sm);
+  background: var(--panel-2); text-align: center;
+}
+#actions-section .stat b { display: block; font-size: 18px; font-weight: 700; line-height: 1.2; }
+#actions-section .stat span { font-size: 11px; text-transform: uppercase;
+                              letter-spacing: 0.4px; color: var(--text-dim); }
+#actions-section .stat.spray b     { color: var(--spray); }
+#actions-section .stat.fertilize b { color: var(--fert); }
+
+#actions-section ol {
+  list-style: none; margin: 0; padding: 0;
+  overflow-y: auto; flex: 1 1 auto; min-height: 0; max-height: 38vh;
+}
+#actions-section li {
+  padding: 5px 0; display: flex; gap: 8px; align-items: baseline;
+  border-top: 1px solid var(--border-soft);
+  font-family: var(--mono); font-size: 12.5px; color: var(--text-dim);
+}
+#actions-section li:first-child { border-top: 0; }
+#actions-section li b     { flex: 0 0 64px; font-weight: 700; color: var(--text-dim); }
+#actions-section li .zone { flex: 1 1 auto; color: var(--text); }
+#actions-section li .time { flex: 0 0 auto; color: var(--text-faint); }
+#actions-section li.spray     b { color: var(--spray); }
+#actions-section li.fertilize b { color: var(--fert); }
+#actions-section .empty { color: var(--text-faint); font-style: italic; padding: 8px 0; }
+
+/* Thin custom scrollbar for the action feed. */
+#actions-section ol::-webkit-scrollbar { width: 7px; }
+#actions-section ol::-webkit-scrollbar-thumb {
+  background: #2c3545; border-radius: 999px;
+}
+
+/* ── Responsive — narrow viewports ───────────────────────────────────── */
+@media (max-width: 560px) {
+  #side-panel { left: 8px; right: 8px; top: 8px; width: auto;
+                max-height: calc(100vh - 16px); }
+}
