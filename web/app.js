@@ -410,7 +410,7 @@ function handleStateChange(changedKeys, state) {
 // ---------------------------------------------------------------------------
 
 function updateTwinStatus() {
-  const panel = document.getElementById("twin-panel");
+  const panel = document.getElementById("twin-section");
   if (!panel) return;
   const nav = STATE.navigator_status && STATE.navigator_status.json;
   const dt  = STATE.dt_status        && STATE.dt_status.json;
@@ -466,7 +466,7 @@ function updateTwinStatus() {
 // ---------------------------------------------------------------------------
 
 function updateActionHistory(wrapped) {
-  const panel = document.getElementById("actions-panel");
+  const panel = document.getElementById("actions-section");
   if (!panel) return;
   if (!wrapped || !wrapped.json) return;
   const s = wrapped.json;
@@ -524,7 +524,7 @@ function formatActionTime(iso) {
 // ---------------------------------------------------------------------------
 
 function updateBatteryDisplay(battery) {
-  const panel = document.getElementById("mission-panel");
+  const panel = document.getElementById("mission-section");
   if (!panel) return;
   const row = panel.querySelector('[data-row="battery"]');
   const el  = panel.querySelector("[data-field=battery]");
@@ -558,7 +558,7 @@ function updateBatteryDisplay(battery) {
 //   { state, running, index, total, current, awaiting, completed: [...],
 //     waypoints: [{name, action}, ...] }
 function updateMissionPanel(wrapped) {
-  const panel = document.getElementById("mission-panel");
+  const panel = document.getElementById("mission-section");
   if (!panel) return;
   if (!wrapped || !wrapped.json) return;
   const s = wrapped.json;
