@@ -185,8 +185,27 @@ export TURTLEBOT3_MODEL=burger
 ```
 
 ### 2. One-time dependencies
+
+**Install rosbridge (the web dashboard bridge).** The container runs as the
+non-root user `ubuntu`, so `sudo apt ...` fails. Install it as **root** from a
+host terminal (Windows/Ubuntu, NOT inside the container) with `-u 0`:
 ```bash
-sudo apt update && sudo apt install -y ros-jazzy-rosbridge-suite   # web dashboard bridge
+docker exec -u 0 -it turtlebot3_container bash
+apt update && apt install -y ros-jazzy-rosbridge-suite
+exit
+```
+
+> **`--rm` wipes this on exit.** The container is started with `docker run --rm`,
+> so when you stop it the rosbridge install is lost and you'd reinstall next
+> session. To keep it permanently, snapshot the running container back into the
+> image (run on the host, once, while the container is up):
+> ```bash
+> docker commit turtlebot3_container turtlebot3_ws:latest
+> ```
+> After that every `docker run ... turtlebot3_ws` already has rosbridge.
+
+**Build the package** (inside the container, after step 1 sourcing):
+```bash
 cd /ws && colcon build --packages-select farm_twin_poc && source install/setup.bash
 ros2 pkg executables farm_twin_poc
 # Expected: dt_logger_node, nav2_navigator, pe_state_node, zone_monitor_node
