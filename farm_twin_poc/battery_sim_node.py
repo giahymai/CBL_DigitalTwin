@@ -31,6 +31,7 @@ import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import BatteryState
+from std_msgs.msg import Float64
 
 
 class BatterySimNode(Node):
@@ -62,6 +63,11 @@ class BatterySimNode(Node):
 
         self.create_subscription(
             Odometry, str(gp('odom_topic').value), self._odom_cb, 10)
+        # Manual override from the web UI — POST /api/set_battery on the
+        # web server publishes a Float64 (0..100) here, and the next
+        # _tick will report the new value.
+        self.create_subscription(
+            Float64, '/battery_set_level', self._cb_set_level, 10)
         self._pub = self.create_publisher(
             BatteryState, str(gp('battery_topic').value), 10)
         self.create_timer(
@@ -71,6 +77,14 @@ class BatterySimNode(Node):
             f'battery_sim_node up — {self._percent:.0f}% start, '
             f'drain idle {gp("drain_per_hour_idle").value:.1f}%/h, '
             f'moving {gp("drain_per_hour_moving").value:.1f}%/h')
+
+    def _cb_set_level(self, msg: Float64) -> None:
+        # Clamp so a bad UI value can never wedge the sim into a NaN
+        # or negative state — both would crash downstream subscribers.
+        val = max(0.0, min(100.0, float(msg.data)))
+        self.get_logger().info(
+            f'[BATTERY] manual override: {self._percent:.1f}% -> {val:.1f}%')
+        self._percent = val
 
     def _odom_cb(self, msg: Odometry) -> None:
         v = msg.twist.twist

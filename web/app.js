@@ -72,7 +72,7 @@ const ROBOT_STROKE    = "rgba(0, 0, 0, 0.65)";
 const HEADING_LEN_M   = ROBOT_RADIUS_M * 1.35;
 const HEADING_STROKE  = "rgba(20, 20, 20, 0.95)";
 
-// Robot's spawn pose. Must match gazebo_nav2_demo.launch.py's x_pose /
+// Robot's spawn pose. Must match physical_entity.launch.py's x_pose /
 // y_pose (and nav2_sim.yaml's initial_pose). Used as the drawing
 // fallback until AMCL publishes its first /amcl_pose, so the disc is
 // already on screen the moment the page loads.
@@ -245,6 +245,7 @@ window.addEventListener("DOMContentLoaded", () => {
   resizeCanvas(canvasEl, ctxRef);
   window.addEventListener("resize", () => resizeCanvas(canvasEl, ctxRef));
   wireStartButton();
+  wireBatteryControl();
   connectLiveState();
 });
 
@@ -297,6 +298,54 @@ function setStartButtonRunning(running) {
 }
 
 // ---------------------------------------------------------------------------
+// Battery override — POSTs {percent} to /api/set_battery, which publishes
+// a Float64 to /battery_set_level that the battery_sim_node consumes on
+// its next tick. Useful for testing the dispatcher's low-battery
+// return-home trigger without waiting for the real drain.
+// ---------------------------------------------------------------------------
+
+function wireBatteryControl() {
+  const btn   = document.getElementById("set-battery-btn");
+  const input = document.getElementById("set-battery-input");
+  if (!btn || !input) return;
+  if (location.protocol === "file:") {
+    btn.disabled = true; input.disabled = true; return;
+  }
+
+  const submit = async () => {
+    const raw = input.value.trim();
+    const pct = parseFloat(raw);
+    if (raw === "" || isNaN(pct) || pct < 0 || pct > 100) {
+      input.classList.add("invalid");
+      setTimeout(() => input.classList.remove("invalid"), 1200);
+      return;
+    }
+    btn.disabled = true;
+    try {
+      const r = await fetch("/api/set_battery", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ percent: pct }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        console.warn("/api/set_battery failed:", body);
+      }
+    } catch (err) {
+      console.warn("/api/set_battery error:", err);
+    } finally {
+      btn.disabled = false;
+      input.value = "";
+    }
+  };
+
+  btn.addEventListener("click", submit);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submit();
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Live state — Server-Sent Events from web_server_node
 // ---------------------------------------------------------------------------
 //
@@ -345,6 +394,69 @@ function handleStateChange(changedKeys, state) {
   if (changedKeys.includes("dt_status")) {
     updateActionHistory(state.dt_status);
   }
+  // The Twin Status panel pulls from navigator_status, amcl_pose, and
+  // dt_status, so refresh on any of them.
+  if (changedKeys.includes("navigator_status") ||
+      changedKeys.includes("amcl_pose") ||
+      changedKeys.includes("dt_status")) {
+    updateTwinStatus();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Twin Status panel — surfaces what the digital twin can observe about
+// the robot right now: navigator state, map-frame position, dt_logger
+// sync error, and which zones have been visited.
+// ---------------------------------------------------------------------------
+
+function updateTwinStatus() {
+  const panel = document.getElementById("twin-panel");
+  if (!panel) return;
+  const nav = STATE.navigator_status && STATE.navigator_status.json;
+  const dt  = STATE.dt_status        && STATE.dt_status.json;
+
+  // Robot state — recolour the row, not just the value, so the strong
+  // "returning home" colour reads at a glance.
+  const stateRow = panel.querySelector('[data-row="robot-state"]');
+  const stateEl  = panel.querySelector("[data-field=robot-state]");
+  stateRow.classList.remove(
+      "robot-idle", "robot-navigating", "robot-returning_home");
+  const stateText = ({
+    idle:           "Idle",
+    navigating:     "Navigating",
+    returning_home: "Returning home",
+  })[nav && nav.state] || (nav && nav.state) || "—";
+  stateEl.textContent = stateText;
+  if (nav && nav.state) stateRow.classList.add("robot-" + nav.state);
+
+  // Position — prefer AMCL (map frame). /odom drifts and the navigator
+  // status carries odom too, so this is the authoritative one.
+  const pose = (STATE.amcl_pose && STATE.amcl_pose.pose) || null;
+  panel.querySelector("[data-field=robot-position]").textContent =
+      pose
+          ? `(${pose.position.x.toFixed(2)}, ${pose.position.y.toFixed(2)}) m`
+          : "—";
+
+  // Current goal — what the navigator is driving toward right now.
+  panel.querySelector("[data-field=robot-goal]").textContent =
+      (nav && nav.current) ? nav.current : "—";
+
+  // dt_logger output: sync error and the zones it has logged.
+  const syncErr = dt && typeof dt.sync_error_m === "number"
+      ? dt.sync_error_m
+      : null;
+  panel.querySelector("[data-field=sync-error]").textContent =
+      syncErr == null ? "—" : `${syncErr.toFixed(2)} m`;
+
+  // Show zones as their last char (A/B/C/D) for compactness, plus a
+  // count so the meaning stays clear with zero visited.
+  const zones = (dt && Array.isArray(dt.zones_covered))
+      ? dt.zones_covered : [];
+  const initials = zones.map(n => String(n).slice(-1)).join(", ");
+  panel.querySelector("[data-field=zones-visited]").textContent =
+      zones.length === 0
+          ? "0"
+          : `${zones.length}  (${initials})`;
 }
 
 // ---------------------------------------------------------------------------

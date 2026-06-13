@@ -35,6 +35,31 @@
     #start-nav-btn:disabled {
       background: #b9c5d6; cursor: not-allowed;
     }
+    /* Manual battery override row — small inline form below the
+       waypoint list. Sits inside #mission-panel. */
+    .battery-set {
+      display: flex; gap: 6px; align-items: center;
+      margin-top: 10px; padding-top: 8px;
+      border-top: 1px solid #eee;
+      pointer-events: auto;
+    }
+    .battery-set label { color: #444; font-size: 12.5px; }
+    .battery-set input {
+      width: 60px; padding: 5px 6px; font: inherit; font-size: 13px;
+      border: 1px solid #ccc; border-radius: 4px; outline: none;
+      transition: border-color 120ms ease;
+    }
+    .battery-set input:focus { border-color: #1a73e8; }
+    .battery-set input.invalid { border-color: #c22; }
+    .battery-set button {
+      padding: 5px 12px; font: inherit; font-size: 13px; font-weight: 600;
+      color: #fff; background: #1a73e8; border: 0; border-radius: 4px;
+      cursor: pointer;
+    }
+    .battery-set button:hover:not(:disabled) { background: #1763c8; }
+    .battery-set button:disabled {
+      background: #b9c5d6; cursor: not-allowed;
+    }
     #mission-panel h2 { margin: 0 0 10px 0; font-size: 15px; font-weight: 700;
                         text-transform: uppercase; letter-spacing: 0.5px;
                         color: #333; }
@@ -82,6 +107,30 @@
     #actions-panel li.spray     b { color: #c22; }
     #actions-panel li.fertilize b { color: #2c8c4a; }
     #actions-panel .empty { color: #999; font-style: italic; padding: 6px 0; }
+
+    /* Twin Status panel — bottom-left, shows everything the digital twin
+       observes: navigator state, robot pose, dt_logger sync error,
+       zones visited so far. */
+    #twin-panel {
+      position: absolute; bottom: 16px; left: 16px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 14px 18px; border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+      min-width: 260px; pointer-events: none;
+      font-size: 14px; line-height: 1.45;
+    }
+    #twin-panel h2 { margin: 0 0 8px 0; font-size: 15px; font-weight: 700;
+                     text-transform: uppercase; letter-spacing: 0.5px;
+                     color: #333; }
+    #twin-panel .row { color: #555; }
+    #twin-panel .row b { color: #222; font-weight: 600; }
+    /* Navigator state colours — orange for return-home is the only path
+       that hides a problem (low battery or manual /return_home). */
+    #twin-panel .robot-idle           b { color: #777; }
+    #twin-panel .robot-navigating     b { color: #1a73e8; }
+    #twin-panel .robot-returning_home b { color: #d9822b; font-weight: 700; }
+    #twin-panel .row .mono { font-family: ui-monospace, SFMono-Regular,
+                             Menlo, Consolas, monospace; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -94,6 +143,12 @@
     <div class="row">Driving to:&nbsp;<b data-field="current">—</b></div>
     <ul data-field="waypoints"></ul>
     <button id="start-nav-btn" type="button">Start Navigation</button>
+    <div class="battery-set">
+      <label for="set-battery-input">Set battery:</label>
+      <input id="set-battery-input" type="number" min="0" max="100" step="1"
+             placeholder="0-100" inputmode="decimal">
+      <button id="set-battery-btn" type="button">Apply</button>
+    </div>
   </div>
   <div id="actions-panel">
     <h2>Actions</h2>
@@ -101,6 +156,14 @@
       <b data-field="spray-count">0</b>&nbsp;spray&nbsp;·&nbsp;<b data-field="fert-count">0</b>&nbsp;fertilize
     </div>
     <ol data-field="action-list"></ol>
+  </div>
+  <div id="twin-panel">
+    <h2>Twin Status</h2>
+    <div class="row" data-row="robot-state">Robot:&nbsp;<b data-field="robot-state">—</b></div>
+    <div class="row">Position:&nbsp;<b data-field="robot-position" class="mono">—</b></div>
+    <div class="row">Goal:&nbsp;<b data-field="robot-goal">—</b></div>
+    <div class="row">Sync error:&nbsp;<b data-field="sync-error" class="mono">—</b></div>
+    <div class="row">Zones visited:&nbsp;<b data-field="zones-visited" class="mono">—</b></div>
   </div>
   <script src="app.js"></script>
 </body>

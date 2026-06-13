@@ -47,7 +47,6 @@ from rclpy.duration import Duration
 from rclpy.executors import SingleThreadedExecutor
 
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from geometry_msgs.msg import PoseStamped, Quaternion, TwistStamped
@@ -72,9 +71,6 @@ class NavigatorNode(Node):
 
         # ---- parameters ----
         self.declare_parameter('odom_topic',             '/odom')
-        self.declare_parameter('battery_topic',          '/battery_state')
-        self.declare_parameter('return_battery_percent', 20.0)
-        self.declare_parameter('battery_check_period',   2.0)
         self.declare_parameter('set_initial_pose',       False)
         # Home pose for /return_home. Defaults to the spawn used by the
         # current launch (1.5, -2.0). Override via params if you change the
@@ -95,8 +91,6 @@ class NavigatorNode(Node):
 
         gp = self.get_parameter
         self._odom_topic     = gp('odom_topic').value
-        self._battery_topic  = gp('battery_topic').value
-        self._low_thresh     = float(gp('return_battery_percent').value)
         self._home_x         = float(gp('home_x').value)
         self._home_y         = float(gp('home_y').value)
         self._home_yaw       = float(gp('home_yaw').value)
@@ -110,8 +104,6 @@ class NavigatorNode(Node):
 
         # ---- state ----
         self._x = self._y = self._yaw = 0.0
-        self._battery_pct = 100.0
-        self._battery_seen = False
         self._state   = 'idle'          # idle | navigating | returning_home
         self._current: Optional[str] = None
         self._completed: list = []      # destinations finished since startup
@@ -127,7 +119,6 @@ class NavigatorNode(Node):
 
         # ---- ROS I/O ----
         self.create_subscription(Odometry,     self._odom_topic,    self._odom_cb,    10)
-        self.create_subscription(BatteryState, self._battery_topic, self._battery_cb, 10)
         self.create_subscription(String,       '/destination',      self._destination_cb, 10)
         self._status_pub   = self.create_publisher(String, '/navigator/status',     10)
         self._reached_pub  = self.create_publisher(String, '/destination_reached',  10)
@@ -137,13 +128,12 @@ class NavigatorNode(Node):
         self.create_service(Trigger, '/stop_navigation',  self._stop_srv)
         self.create_service(Trigger, '/nav_status',       self._nav_status_srv)
         self.create_timer(3.0, self._broadcast)
-        self.create_timer(float(gp('battery_check_period').value), self._battery_watch)
 
         self.get_logger().info(
             'Navigator started — listening on /destination '
             '(publish a JSON pose to drive there)')
         self.get_logger().info(
-            f'Return-home battery threshold: {self._low_thresh:.0f}%')
+            'Low-battery return-home is owned by mission_dispatcher_node.')
 
         if bool(gp('set_initial_pose').value):
             self._nav.setInitialPose(self._make_pose(self._home_x, self._home_y, self._home_yaw))
@@ -158,22 +148,6 @@ class NavigatorNode(Node):
         q = msg.pose.pose.orientation
         self._yaw = math.atan2(2 * (q.w * q.z + q.x * q.y),
                                1 - 2 * (q.y * q.y + q.z * q.z))
-
-    def _battery_cb(self, msg: BatteryState):
-        pct = msg.percentage
-        if pct is not None and not math.isnan(pct):
-            val = pct * 100.0 if pct <= 1.0 else pct
-            self._battery_pct = val
-            if val > 0.0:
-                self._battery_seen = True
-
-    def _battery_watch(self):
-        if (self._battery_seen and self._state == 'navigating'
-                and self._battery_pct < self._low_thresh):
-            self.get_logger().warn(
-                f'[BATTERY] {self._battery_pct:.0f}% < {self._low_thresh:.0f}% '
-                f'-> aborting current goal, returning home')
-            self._trigger_return_home()
 
     # ---------------- /destination handler ----------------
     def _destination_cb(self, msg: String):
@@ -245,7 +219,6 @@ class NavigatorNode(Node):
     def _nav_status_srv(self, req, res):
         res.success = True
         res.message = (f'state={self._state}\ncurrent={self._current}\n'
-                       f'battery={self._battery_pct:.0f}%\n'
                        f'completed={self._completed}\n'
                        f'position=({self._x:.2f}, {self._y:.2f})')
         return res
@@ -359,9 +332,19 @@ class NavigatorNode(Node):
 
     # ---------------- status ----------------
     def _broadcast(self):
+        # JSON so the web UI can render it structurally. web_server_node's
+        # _string_to_dict() parses this back out under the `json` field.
+        payload = {
+            'stamp':     self.get_clock().now().nanoseconds * 1e-9,
+            'state':     self._state,
+            'current':   self._current,
+            'completed': list(self._completed),
+            'position':  {'x':   round(self._x,   3),
+                          'y':   round(self._y,   3),
+                          'yaw': round(self._yaw, 3)},
+        }
         msg = String()
-        msg.data = (f'state={self._state} | current={self._current} | '
-                    f'battery={self._battery_pct:.0f}% | completed={self._completed}')
+        msg.data = json.dumps(payload, allow_nan=False)
         self._status_pub.publish(msg)
 
 

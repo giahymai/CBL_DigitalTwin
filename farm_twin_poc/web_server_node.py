@@ -4,7 +4,7 @@ web_server_node.py — ROS subscriber + built-in HTTP server for the web UI
 ========================================================================
 Farm Twin PoC | Team 5 Terra Minds
 
-Subscribes to every topic gazebo_nav2_demo exposes and serves both:
+Subscribes to every relevant ROS topic and serves both:
   - the latest cached message of each topic, as JSON, under /api/state[...]
   - static files (index.html / style.css / app.js) from the package's `web/`
     directory, at /
@@ -109,7 +109,7 @@ from geometry_msgs.msg import (
 )
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from sensor_msgs.msg import BatteryState, Imu
-from std_msgs.msg import String
+from std_msgs.msg import Float64, String
 from std_srvs.srv import Trigger
 
 
@@ -351,6 +351,10 @@ class WebServerNode(Node):
         # is dispatched async and awaited in the HTTP handler thread.
         self._start_nav_client = self.create_client(
             Trigger, '/start_navigation')
+        # Manual battery override — UI form publishes here, battery_sim
+        # snaps to the value on the next tick.
+        self._battery_set_pub = self.create_publisher(
+            Float64, '/battery_set_level', 10)
 
         # Static web root — created by setup.py from <pkg_root>/web/.
         self._web_root = os.path.join(
@@ -394,6 +398,17 @@ class WebServerNode(Node):
             self._httpd.server_close()
         except Exception:
             pass
+
+    def set_battery_level(self, percent: float) -> dict:
+        """Publish a manual battery override. battery_sim_node clamps the
+        value, so anything outside 0..100 just snaps to the nearest end."""
+        if math.isnan(percent):
+            return {'success': False, 'message': 'percent is NaN'}
+        msg = Float64()
+        msg.data = float(percent)
+        self._battery_set_pub.publish(msg)
+        return {'success': True,
+                'message': f'Battery set to {percent:.1f}%'}
 
     def call_start_navigation(self, timeout_s: float = 5.0) -> dict:
         """Call /start_navigation. Spinning is done by main()'s executor
@@ -576,6 +591,24 @@ def _make_handler(node: 'WebServerNode', web_root: str):
                 result = node.call_start_navigation()
                 status = (HTTPStatus.OK if result['success']
                           else HTTPStatus.SERVICE_UNAVAILABLE)
+                return self._send_json(result, status=status)
+            if path == '/api/set_battery':
+                length = int(self.headers.get('Content-Length') or 0)
+                raw = self.rfile.read(length) if length > 0 else b''
+                try:
+                    body = json.loads(raw) if raw else {}
+                except json.JSONDecodeError:
+                    return self._send_error(
+                        HTTPStatus.BAD_REQUEST, 'invalid JSON body')
+                try:
+                    percent = float(body.get('percent'))
+                except (TypeError, ValueError):
+                    return self._send_error(
+                        HTTPStatus.BAD_REQUEST,
+                        'missing or non-numeric "percent" field')
+                result = node.set_battery_level(percent)
+                status = (HTTPStatus.OK if result['success']
+                          else HTTPStatus.BAD_REQUEST)
                 return self._send_json(result, status=status)
             return self._send_error(
                 HTTPStatus.NOT_FOUND, f'no POST handler for {path}')
