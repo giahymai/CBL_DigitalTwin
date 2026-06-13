@@ -160,15 +160,23 @@ action. To move a zone, edit it in **all three** places: `zone_monitor_node.py`
 ### 0. Start the Docker container (at home, every session)
 1. Open **Docker Desktop** on Windows.
 2. Open **Ubuntu** from the Start Menu (not PowerShell).
-3. Start the container (`--net=host` so the browser on Windows reaches rosbridge,
-   and ports 8080/9090 are shared via host networking):
+3. Start the container. **Publish ports 8080/9090 with `-p`** so the browser on
+   Windows can reach the dashboard and rosbridge. Do **not** use `--net=host`:
+   on Docker Desktop for Windows (WSL2 backend) host networking binds the ports
+   inside the Docker VM and Windows `localhost` never sees them — only `-p`
+   published ports are forwarded to Windows. (`--net=host` only works that way on
+   native Linux.)
 ```bash
-docker run --rm -it --name turtlebot3_container --net=host \
+docker run --rm -it --name turtlebot3_container \
+  -p 8080:8080 -p 9090:9090 \
   -e DISPLAY=$DISPLAY \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
   -v /home/c2irr10/turtlebot3_ws:/ws \
   --user $(id -u):$(id -g) turtlebot3_ws bash
 ```
+> Gazebo's GUI still works without host networking — it uses the mounted X11
+> socket (`/tmp/.X11-unix`), not the network. DDS runs inside this single
+> container, so the default bridge network is fine.
 **Every additional terminal** attaches to the same container, then sources (step 1):
 ```bash
 docker exec -it turtlebot3_container bash
@@ -275,6 +283,17 @@ ros2 service call /stop_navigation  std_srvs/srv/Trigger
 ---
 
 ## Troubleshooting
+
+**`http://localhost:8080` won't load at all (page never opens):** the container
+ports aren't reaching Windows. This happens if it was started with `--net=host`
+instead of `-p` (see step 0.3). Verify on the **host**:
+```bash
+docker inspect turtlebot3_container --format '{{json .NetworkSettings.Ports}}'
+# must show 8080 and 9090 mapped — NOT an empty {}
+```
+If it's empty / host networking: `docker commit turtlebot3_container turtlebot3_ws:latest`
+(to keep rosbridge), `docker stop turtlebot3_container`, then re-run with the
+`-p 8080:8080 -p 9090:9090` command from step 0.3.
 
 **Dashboard says "disconnected":** rosbridge isn't running or the port/host is
 wrong. Check `ros2 node list` shows `/rosbridge_websocket`; confirm the host in
