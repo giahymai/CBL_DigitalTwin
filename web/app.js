@@ -342,6 +342,67 @@ function handleStateChange(changedKeys, state) {
   if (changedKeys.includes("battery")) {
     updateBatteryDisplay(state.battery);
   }
+  if (changedKeys.includes("dt_status")) {
+    updateActionHistory(state.dt_status);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Action history — driven by /dt/status (auto-parsed JSON). The payload
+// carries spray/fertilize counts plus a `recent_actions` array of the
+// last ~20 events; each entry is { action, zone, logged_at }.
+// ---------------------------------------------------------------------------
+
+function updateActionHistory(wrapped) {
+  const panel = document.getElementById("actions-panel");
+  if (!panel) return;
+  if (!wrapped || !wrapped.json) return;
+  const s = wrapped.json;
+
+  panel.querySelector("[data-field=spray-count]").textContent =
+      String(s.spray_actions ?? 0);
+  panel.querySelector("[data-field=fert-count]").textContent  =
+      String(s.fertilize_actions ?? 0);
+
+  const ol = panel.querySelector("[data-field=action-list]");
+  ol.innerHTML = "";
+
+  const actions = Array.isArray(s.recent_actions) ? s.recent_actions : [];
+  if (actions.length === 0) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "No actions yet.";
+    ol.appendChild(li);
+    return;
+  }
+
+  // Most-recent first reads better in a feed.
+  for (let i = actions.length - 1; i >= 0; i--) {
+    const a = actions[i];
+    const li = document.createElement("li");
+    if (a.action === "spray" || a.action === "fertilize") {
+      li.classList.add(a.action);
+    }
+    // Build with DOM nodes (not innerHTML) so a malicious zone name
+    // can't inject markup.
+    const action = document.createElement("b");
+    action.textContent = String(a.action || "?").toUpperCase();
+    const zone = document.createElement("span");
+    zone.className = "zone";
+    zone.textContent = String(a.zone || "");
+    const time = document.createElement("span");
+    time.className = "time";
+    time.textContent = formatActionTime(a.logged_at);
+    li.append(action, zone, time);
+    ol.appendChild(li);
+  }
+}
+
+function formatActionTime(iso) {
+  // dt_logger writes datetime.now().isoformat() — e.g. "2026-06-13T12:34:56.7"
+  if (!iso) return "—";
+  const m = /T(\d{2}:\d{2}:\d{2})/.exec(String(iso));
+  return m ? m[1] : String(iso).slice(11, 19) || "—";
 }
 
 // ---------------------------------------------------------------------------

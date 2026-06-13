@@ -96,6 +96,10 @@ class DTLoggerNode(Node):
             'total_actions':     len(self._log),
             'zones_covered':     sorted(list(self._zones)),
             'last_action':       self._log[-1] if self._log else None,
+            # Trail of the most recent events for the web UI. Capped so the
+            # /dt/status payload (and the SSE delta downstream) stays small
+            # — full log is still available via /get_dt_log.
+            'recent_actions':    self._log[-20:],
         }
 
     def _status_srv(self, req, res):
