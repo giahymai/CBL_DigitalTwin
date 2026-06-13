@@ -23,6 +23,9 @@
   <depend>launch</depend>
   <depend>launch_ros</depend>
 
+  <!-- Option B web dashboard (Digital Entity): rosbridge bridges ROS<->browser -->
+  <exec_depend>rosbridge_server</exec_depend>
+
   <export>
     <build_type>ament_python</build_type>
   </export>

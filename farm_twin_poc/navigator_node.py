@@ -38,11 +38,11 @@ Services (std_srvs/Trigger)
   /nav_status       — query state
 
 Run order
-  1. ros2 launch farm_twin_poc gazebo_nav2_demo.launch.py map:=$HOME/map.yaml
-       (or, real robot:  ros2 launch farm_twin_poc navigation.launch.py map:=~/map.yaml)
-  2. Wait for "Nav2 is active". If set_initial_pose:=false, click
-     "2D Pose Estimate" in RViz at the robot's real spot first.
+  1. ros2 launch farm_twin_poc farm_twin.launch.py   (brings up Gazebo + Nav2 +
+       this navigator + the web dashboard)
+  2. Wait for "Nav2 is active" (AMCL auto-seeds at the spawn pose).
   3. ros2 service call /start_navigation std_srvs/srv/Trigger
+       (or click "Start tour" on the dashboard)
 """
 import math
 import time

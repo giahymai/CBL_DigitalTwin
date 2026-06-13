@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Farm Twin — Digital Entity Dashboard</title>
+<!-- roslibjs: needs internet for this CDN. Vendor it into web/ for offline use. -->
+<script src="https://cdn.jsdelivr.net/npm/roslib@1/build/roslib.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1419; --card:#1a2027; --line:#2b3440; --txt:#e6edf3; --muted:#8b98a5;
+    --ok:#3fb950; --warn:#d29922; --bad:#f85149; --accent:#58a6ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt)}
+  header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;
+    align-items:center;gap:14px;flex-wrap:wrap}
+  header h1{font-size:18px;margin:0;font-weight:650}
+  header .sub{color:var(--muted);font-size:13px}
+  #conn{margin-left:auto;font-size:13px;display:flex;align-items:center;gap:8px}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--bad);display:inline-block}
+  .dot.up{background:var(--ok)}
+  main{display:grid;grid-template-columns:320px 1fr 320px;gap:16px;padding:16px;align-items:start}
+  @media(max-width:1100px){main{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+    margin:0 0 12px}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;
+    border-bottom:1px dashed var(--line);font-size:14px}
+  .row:last-child{border-bottom:0}
+  .pill{padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600}
+  .pill.ok{background:rgba(63,185,80,.15);color:var(--ok)}
+  .pill.warn{background:rgba(210,153,34,.15);color:var(--warn)}
+  .pill.bad{background:rgba(248,81,73,.15);color:var(--bad)}
+  .battery{height:18px;border:1px solid var(--line);border-radius:5px;overflow:hidden;background:#0b0f14}
+  .battery > div{height:100%;background:var(--ok);transition:width .3s,background .3s}
+  canvas{background:#0b0f14;border:1px solid var(--line);border-radius:8px;width:100%;display:block}
+  .grid-btn{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:240px;margin:0 auto}
+  button{background:#22303c;color:var(--txt);border:1px solid var(--line);border-radius:8px;
+    padding:9px;font-size:13px;cursor:pointer;font-weight:600}
+  button:hover{border-color:var(--accent)}
+  button.bad{background:rgba(248,81,73,.12);border-color:rgba(248,81,73,.4)}
+  button.warn{background:rgba(210,153,34,.12);border-color:rgba(210,153,34,.4)}
+  button.ok{background:rgba(63,185,80,.12);border-color:rgba(63,185,80,.4)}
+  .btns{display:flex;flex-wrap:wrap;gap:8px}
+  .btns button{flex:1;min-width:90px}
+  #log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;height:150px;
+    overflow:auto;background:#0b0f14;border:1px solid var(--line);border-radius:8px;padding:8px;
+    white-space:pre-wrap;color:var(--muted)}
+  .metric{font-size:26px;font-weight:700}
+  .metric small{font-size:13px;color:var(--muted);font-weight:400}
+  .cfg{font-size:12px;color:var(--muted)}
+  .cfg input{background:#0b0f14;border:1px solid var(--line);color:var(--txt);border-radius:6px;
+    padding:3px 6px;width:160px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🌱 Farm Twin · Digital Entity</h1>
+  <span class="sub">Option B — Gazebo robot (Physical Entity) ⇄ web dashboard (Digital Entity)</span>
+  <span id="conn"><span class="cfg">ws://<input id="wsurl" value=""/></span>
+    <span id="connDot" class="dot"></span><span id="connTxt">disconnected</span></span>
+</header>
+
+<main>
+  <!-- ============== STATE SYNC (Goal 2) ============== -->
+  <section class="card">
+    <h2>Physical Entity state (synchronised)</h2>
+    <div class="row"><span>Battery</span><span id="battTxt" class="pill ok">— %</span></div>
+    <div class="battery"><div id="battBar" style="width:0%"></div></div>
+    <div class="row"><span>Mode</span><span id="mode" class="pill ok">—</span></div>
+    <div class="row"><span>LiDAR sensor</span><span id="lidar" class="pill ok">—</span></div>
+    <div class="row"><span>Motor</span><span id="motor" class="pill ok">—</span></div>
+    <div class="row"><span>Localization</span><span id="loc" class="pill ok">—</span></div>
+    <div class="row"><span>Emergency stop</span><span id="estop" class="pill ok">no</span></div>
+    <div class="row"><span>PE→DE link age</span><span id="link" class="pill ok">— s</span></div>
+
+    <h2 style="margin-top:18px">Fault injection (DE → PE)</h2>
+    <div class="btns">
+      <button class="bad"  onclick="fault('lidar','fail')">LiDAR fail</button>
+      <button class="warn" onclick="fault('lidar','degrade')">LiDAR degrade</button>
+      <button class="ok"   onclick="fault('lidar','clear')">LiDAR ok</button>
+    </div>
+    <div class="btns" style="margin-top:8px">
+      <button class="bad"  onclick="fault('motor','stall')">Motor stall</button>
+      <button class="ok"   onclick="fault('motor','clear')">Motor ok</button>
+    </div>
+    <div class="btns" style="margin-top:8px">
+      <button class="warn" onclick="faultBatt(15)">Battery → 15%</button>
+      <button class="warn" onclick="fault('battery','drain')">Fast drain</button>
+      <button class="ok"   onclick="fault('system','reset')">Reset all</button>
+    </div>
+  </section>
+
+  <!-- ============== ENVIRONMENT (Goal 3) ============== -->
+  <section class="card">
+    <h2>Environment — LiDAR view (/scan_filtered)</h2>
+    <canvas id="scan" width="560" height="360"></canvas>
+    <div class="row"><span>Nearest obstacle</span>
+      <span class="metric"><span id="near">—</span><small> m</small></span></div>
+    <div class="row"><span>Robot pose (map)</span><span id="pose" class="cfg">—</span></div>
+  </section>
+
+  <!-- ============== CONTROL (Goal 1, DE→PE) ============== -->
+  <section class="card">
+    <h2>Control (DE → PE)</h2>
+    <div class="btns" style="margin-bottom:10px">
+      <button class="ok"   onclick="callSrv('/start_navigation')">▶ Start tour</button>
+      <button class="warn" onclick="callSrv('/return_home')">⌂ Return home</button>
+      <button class="bad"  onclick="stopAll()">■ Stop</button>
+    </div>
+    <p class="cfg" style="margin:4px 0 10px">Manual drive — hold the buttons or use W/A/S/D:</p>
+    <div class="grid-btn">
+      <span></span>
+      <button onmousedown="hold(0.2,0)"  onmouseup="release()">▲</button>
+      <span></span>
+      <button onmousedown="hold(0,0.6)"  onmouseup="release()">◀</button>
+      <button onmousedown="hold(0,0)"    onmouseup="release()">■</button>
+      <button onmousedown="hold(0,-0.6)" onmouseup="release()">▶</button>
+      <span></span>
+      <button onmousedown="hold(-0.2,0)" onmouseup="release()">▼</button>
+      <span></span>
+    </div>
+
+    <h2 style="margin-top:18px">Farm actions log</h2>
+    <div class="row"><span>Spray</span><span class="metric"><span id="spray">0</span></span></div>
+    <div class="row"><span>Fertilize</span><span class="metric"><span id="fert">0</span></span></div>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script>
+// ---------------------------------------------------------------- connection
+const wsInput = document.getElementById('wsurl');
+wsInput.value = location.hostname || 'localhost';
+let ros, topics = {}, scanMsg = null;
+
+function connect(){
+  const url = 'ws://' + (wsInput.value || 'localhost') + ':9090';
+  ros = new ROSLIB.Ros({ url });
+  ros.on('connection', () => setConn(true));
+  ros.on('close',      () => { setConn(false); setTimeout(connect, 2000); });
+  ros.on('error',      () => setConn(false));
+  ros.on('connection', setupTopics);
+}
+function setConn(up){
+  document.getElementById('connDot').className = 'dot' + (up ? ' up' : '');
+  document.getElementById('connTxt').textContent = up ? 'connected' : 'disconnected';
+}
+wsInput.addEventListener('change', () => { if (ros) ros.close(); connect(); });
+
+// ------------------------------------------------------------------- topics
+function topic(name, type){ return new ROSLIB.Topic({ ros, name, messageType: type }); }
+
+function setupTopics(){
+  // ---- PE -> DE : internal state (Goal 2 state sync) ----
+  topic('/pe/state', 'std_msgs/msg/String').subscribe(m => {
+    let s; try { s = JSON.parse(m.data); } catch(e){ return; }
+    setBattery(s.battery_pct);
+    setPill('mode',  s.mode,  s.mode === 'SAFE_STOP' ? 'bad' : 'ok');
+    setPill('lidar', s.lidar_health, s.lidar_health === 'OK' ? 'ok'
+                     : s.lidar_health === 'DEGRADED' ? 'warn' : 'bad');
+    setPill('motor', s.motor_status, s.motor_status === 'OK' ? 'ok' : 'bad');
+    setPill('loc',   s.localization_quality, s.localization_quality === 'GOOD' ? 'ok'
+                     : s.localization_quality === 'DEGRADED' ? 'warn' : 'bad');
+    setPill('estop', s.emergency_stop ? 'STOPPED' : 'no', s.emergency_stop ? 'bad' : 'ok');
+    document.getElementById('near').textContent =
+        (s.nearest_obstacle_m == null) ? '∞' : s.nearest_obstacle_m.toFixed(2);
+    if (s.position) document.getElementById('pose').textContent =
+        `x=${s.position.x.toFixed(2)} y=${s.position.y.toFixed(2)} yaw=${s.position.yaw.toFixed(2)}`;
+  });
+
+  // ---- PE -> DE : environment (Goal 3) ----
+  topic('/scan_filtered', 'sensor_msgs/msg/LaserScan').subscribe(m => { scanMsg = m; drawScan(); });
+
+  // ---- DE backend aggregate ----
+  topic('/dt/status', 'std_msgs/msg/String').subscribe(m => {
+    let s; try { s = JSON.parse(m.data); } catch(e){ return; }
+    document.getElementById('spray').textContent = s.spray_actions;
+    document.getElementById('fert').textContent  = s.fertilize_actions;
+    const age = s.link_age_s;
+    setPill('link', (age == null ? '—' : age.toFixed(1)) + ' s',
+            (s.twin_synced ? 'ok' : 'warn'));
+  });
+
+  // ---- farm events log ----
+  topic('/farm_action', 'std_msgs/msg/String').subscribe(m => {
+    let e; try { e = JSON.parse(m.data); } catch(e2){ return; }
+    logLine(`${e.action.toUpperCase()} @ ${e.zone}  (${e.position.x}, ${e.position.y})`);
+  });
+
+  // ---- DE -> PE publishers ----
+  topics.cmd  = topic('/de/cmd_vel', 'geometry_msgs/msg/TwistStamped');
+  topics.fault= topic('/de/command', 'std_msgs/msg/String');
+}
+
+// -------------------------------------------------------------- UI helpers
+function setPill(id, text, cls){
+  const el = document.getElementById(id);
+  el.textContent = text; el.className = 'pill ' + cls;
+}
+function setBattery(pct){
+  const bar = document.getElementById('battBar');
+  bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+  const cls = pct > 40 ? 'ok' : pct > 20 ? 'warn' : 'bad';
+  bar.style.background = getComputedStyle(document.documentElement)
+                          .getPropertyValue('--' + cls);
+  setPill('battTxt', pct.toFixed(0) + ' %', cls);
+}
+function logLine(t){
+  const el = document.getElementById('log');
+  el.textContent = `[${new Date().toLocaleTimeString()}] ${t}\n` + el.textContent;
+}
+
+// ------------------------------------------------------------- scan drawing
+function drawScan(){
+  const c = document.getElementById('scan'), ctx = c.getContext('2d');
+  ctx.clearRect(0,0,c.width,c.height);
+  const cx = c.width/2, cy = c.height/2, scale = 70;   // px per metre
+  // grid rings
+  ctx.strokeStyle = '#1c2730';
+  for (let r=1; r<=3; r++){ ctx.beginPath(); ctx.arc(cx,cy,r*scale,0,7); ctx.stroke(); }
+  // robot
+  ctx.fillStyle = '#58a6ff';
+  ctx.beginPath(); ctx.arc(cx,cy,6,0,7); ctx.fill();
+  if (!scanMsg) return;
+  ctx.fillStyle = '#3fb950';
+  const m = scanMsg;
+  for (let i=0;i<m.ranges.length;i++){
+    const r = m.ranges[i];
+    if (!isFinite(r) || r < m.range_min || r > m.range_max) continue;
+    const a = m.angle_min + i*m.angle_increment;
+    const x = cx + Math.cos(a)*r*scale;
+    const y = cy - Math.sin(a)*r*scale;
+    ctx.fillRect(x-1.5, y-1.5, 3, 3);
+  }
+}
+
+// --------------------------------------------------------------- DE -> PE
+function publishCmd(lin, ang){
+  if (!topics.cmd) return;
+  topics.cmd.publish(new ROSLIB.Message({
+    header: { stamp: { sec:0, nanosec:0 }, frame_id: 'base_link' },
+    twist:  { linear:{x:lin,y:0,z:0}, angular:{x:0,y:0,z:ang} }
+  }));
+}
+let holdTimer = null;
+function hold(lin, ang){
+  release();
+  publishCmd(lin, ang);
+  holdTimer = setInterval(() => publishCmd(lin, ang), 100);  // > 1/teleop_timeout
+}
+function release(){ if (holdTimer){ clearInterval(holdTimer); holdTimer = null; } }
+function stopAll(){
+  release();
+  for (let i=0;i<5;i++) setTimeout(() => publishCmd(0,0), i*60);
+  callSrv('/stop_navigation');
+}
+document.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k==='w') hold(0.2,0); else if (k==='s') hold(-0.2,0);
+  else if (k==='a') hold(0,0.6); else if (k==='d') hold(0,-0.6);
+});
+document.addEventListener('keyup', e => {
+  if ('wasd'.includes(e.key.toLowerCase())) release();
+});
+
+function fault(target, action){
+  if (!topics.fault) return;
+  topics.fault.publish(new ROSLIB.Message({ data: JSON.stringify({ target, action }) }));
+  logLine(`FAULT INJECT: ${target} ${action}`);
+}
+function faultBatt(v){
+  topics.fault.publish(new ROSLIB.Message({
+    data: JSON.stringify({ target:'battery', action:'set', value:v }) }));
+  logLine(`FAULT INJECT: battery set ${v}%`);
+}
+function callSrv(name){
+  if (!ros) return;
+  new ROSLIB.Service({ ros, name, serviceType: 'std_srvs/srv/Trigger' })
+    .callService(new ROSLIB.ServiceRequest({}),
+      r => logLine(`${name}: ${r.message || (r.success ? 'ok' : 'failed')}`),
+      e => logLine(`${name}: ERROR ${e}`));
+}
+
+connect();
+</script>
+</body>
+</html>

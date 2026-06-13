@@ -63,7 +63,7 @@ class ZoneMonitorNode(Node):
         #            The robot reaches the tile in the map frame but /odom reads
         #            a different number, so zone detection on /odom never fires.
         self.declare_parameter('position_source', 'odom')
-        self.declare_parameter('odom_topic',   '/sim/odom')
+        self.declare_parameter('odom_topic',   '/odom')
         self.declare_parameter('global_frame', 'map')
         self.declare_parameter('robot_frame',  'base_link')
         self._source = self.get_parameter('position_source').value
@@ -89,7 +89,7 @@ class ZoneMonitorNode(Node):
         # navigator is running, or the two will both command motion and fight.
         self.declare_parameter('spin_on_entry',  False)
         self.declare_parameter('spin_speed',     0.6)        # rad/s
-        self.declare_parameter('spin_cmd_topic', '/cmd_vel_raw')
+        self.declare_parameter('spin_cmd_topic', '/de/cmd_vel')
         self._spin_on_entry = bool(self.get_parameter('spin_on_entry').value)
         self._spin_speed    = float(self.get_parameter('spin_speed').value)
         self._spinning      = False
@@ -151,8 +151,8 @@ class ZoneMonitorNode(Node):
 
     def _spin_360(self):
         """Rotate ~360° on the spot to signal spraying/fertilizing (teleop demo
-        only). Time-based, no yaw feedback needed. linear.x stays 0 so
-        twin_safety_node lets the turn through."""
+        only). Time-based, no yaw feedback needed. linear.x stays 0 so it is a
+        pure in-place turn routed through the PE command gate (/de/cmd_vel)."""
         self._spinning = True
         duration = 2.0 * math.pi / max(0.1, self._spin_speed)
         t0 = time.monotonic()

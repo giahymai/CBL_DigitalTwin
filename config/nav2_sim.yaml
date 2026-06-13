@@ -193,7 +193,11 @@ local_costmap:
         enabled: true
         observation_sources: scan
         scan:
-          topic: /scan
+          # /scan_filtered = the PE's scan AFTER pe_state_node applies any
+          # injected LiDAR fault. So a degraded/failed sensor really changes
+          # what Nav2 senses (Goal ③). AMCL still uses raw /scan so a fault
+          # never wrecks localization during a demo.
+          topic: /scan_filtered
           max_obstacle_height: 2.0
           clearing: true
           marking: true
@@ -219,7 +223,7 @@ global_costmap:
         enabled: true
         observation_sources: scan
         scan:
-          topic: /scan
+          topic: /scan_filtered
           max_obstacle_height: 2.0
           clearing: true
           marking: true
@@ -302,7 +306,10 @@ collision_monitor:
     base_frame_id: "base_footprint"
     odom_frame_id: "odom"
     cmd_vel_in_topic: "cmd_vel_smoothed"
-    cmd_vel_out_topic: "cmd_vel"
+    # Route Nav2's final command through pe_state_node (the PE command gate)
+    # instead of straight to /cmd_vel, so the dashboard can override/stop the
+    # robot and any injected fault (lidar/motor/battery) can halt it.
+    cmd_vel_out_topic: "cmd_vel_pe"
     state_topic: "collision_monitor_state"
     transform_tolerance: 0.5
     source_timeout: 5.0
@@ -385,7 +392,7 @@ collision_monitor:
     scan:
       source_timeout: 5.0
       type: "scan"
-      topic: "/scan"
+      topic: "/scan_filtered"
       enabled: true
 
 velocity_smoother:
