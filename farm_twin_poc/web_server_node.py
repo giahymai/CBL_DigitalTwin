@@ -58,7 +58,6 @@ added under `pose.yaw` for convenience.
 
   odom              nav_msgs/Odometry
   amcl_pose         geometry_msgs/PoseWithCovarianceStamped
-  scan              sensor_msgs/LaserScan      (decimated, see scan_decimate)
   imu               sensor_msgs/Imu
   battery           sensor_msgs/BatteryState
   cmd_vel           geometry_msgs/TwistStamped
@@ -108,7 +107,7 @@ from geometry_msgs.msg import (
     TwistStamped,
 )
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
-from sensor_msgs.msg import BatteryState, Imu, LaserScan
+from sensor_msgs.msg import BatteryState, Imu
 from std_msgs.msg import String
 
 
@@ -185,23 +184,6 @@ def _twist_stamped_to_dict(msg: TwistStamped) -> dict:
         'stamp':    _stamp(msg),
         'frame_id': msg.header.frame_id,
         'twist':    _twist(msg.twist),
-    }
-
-
-def _scan_to_dict(msg: LaserScan, decimate: int) -> dict:
-    decimate = max(1, int(decimate))
-    return {
-        'stamp':           _stamp(msg),
-        'frame_id':        msg.header.frame_id,
-        'angle_min':       msg.angle_min,
-        'angle_max':       msg.angle_max,
-        'angle_increment': msg.angle_increment * decimate,
-        'range_min':       msg.range_min,
-        'range_max':       msg.range_max,
-        # NaN/Inf are not JSON-legal; allow_nan=False would raise on them.
-        'ranges': [
-            (r if math.isfinite(r) else None) for r in msg.ranges[::decimate]
-        ],
     }
 
 
@@ -288,14 +270,11 @@ class WebServerNode(Node):
 
         self.declare_parameter('host', '0.0.0.0')
         self.declare_parameter('port', 8080)
-        self.declare_parameter('scan_decimate', 4)
         # 30 Hz matches /odom's native publish rate from the Gazebo bridge,
         # so pushing higher gains nothing (no new data between ticks).
         # Lower if you see CPU pressure or bandwidth issues over the link.
         self.declare_parameter('stream_rate_hz', 30.0)
 
-        self._scan_decimate = int(
-            self.get_parameter('scan_decimate').value)
         stream_period = 1.0 / max(0.1, float(
             self.get_parameter('stream_rate_hz').value))
 
@@ -310,7 +289,6 @@ class WebServerNode(Node):
         self._state: dict[str, Optional[dict]] = {
             'odom':             None,
             'amcl_pose':        None,
-            'scan':             None,
             'imu':              None,
             'battery':          None,
             'cmd_vel':          None,
@@ -331,8 +309,6 @@ class WebServerNode(Node):
             '/odom', self._cb_odom, 10)
         self.create_subscription(PoseWithCovarianceStamped,
             '/amcl_pose', self._cb_amcl, 10)
-        self.create_subscription(LaserScan,
-            '/scan', self._cb_scan, 10)
         self.create_subscription(Imu,
             '/imu', self._cb_imu, 10)
         self.create_subscription(BatteryState,
@@ -472,9 +448,6 @@ class WebServerNode(Node):
 
     def _cb_amcl(self, msg):
         self._store('amcl_pose', _pose_cov_to_dict(msg))
-
-    def _cb_scan(self, msg):
-        self._store('scan', _scan_to_dict(msg, self._scan_decimate))
 
     def _cb_imu(self, msg):
         self._store('imu', _imu_to_dict(msg))
