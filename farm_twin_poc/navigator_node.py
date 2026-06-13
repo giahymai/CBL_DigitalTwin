@@ -296,48 +296,31 @@ class NavigatorNode(Node):
             self._state = 'idle'
 
     def _spin_action(self, action: str = '', revolutions: float = 1.0):
-        """Rotate ~360° in place to signal the spray/fertilize action.
+        """Stand still for ~5 s to simulate the spray/fertilize action.
 
-        While the spin (and the post-spin AMCL settle) runs, advertise
-        the action as the navigator state so the UI shows "Spraying" /
-        "Fertilizing" instead of a generic "Navigating".
+        The robot used to rotate ~360° here to visualise the action, but
+        the simulated effect doesn't require motion — holding position
+        while we publish zero twist is enough. While the hold runs we
+        also advertise the action as the navigator state so the UI shows
+        "Spraying" / "Fertilizing" instead of a generic "Navigating".
         """
         if action == 'spray':
             self._state = 'spraying'
         elif action == 'fertilize':
             self._state = 'fertilizing'
-        target      = revolutions * 2.0 * math.pi
-        accumulated = 0.0
-        last_yaw    = self._yaw
-        t0          = time.monotonic()
-        while accumulated < target and not self._cancel_requested:
-            if time.monotonic() - t0 > 25.0:
-                self.get_logger().warn('[SPIN] timeout')
-                break
-            accumulated += abs(self._wrap(self._yaw - last_yaw))
-            last_yaw     = self._yaw
-            cmd = TwistStamped()
-            cmd.header.stamp    = self.get_clock().now().to_msg()
-            cmd.header.frame_id = 'base_link'
-            cmd.twist.angular.z = self._spin_speed
-            self._cmd_pub.publish(cmd)
-            time.sleep(0.05)
-        stop = TwistStamped()
-        stop.header.stamp    = self.get_clock().now().to_msg()
-        stop.header.frame_id = 'base_link'
-        self._cmd_pub.publish(stop)
 
-        # Settle so AMCL re-converges and the scan_gate / costmaps see
-        # clean LiDAR sweeps before the next goal arrives.
-        if self._settle_s > 0.0:
-            self.get_logger().info(f'[SPIN] settling {self._settle_s:.1f}s')
-            t_end = time.monotonic() + self._settle_s
-            while time.monotonic() < t_end and not self._cancel_requested:
-                z = TwistStamped()
-                z.header.stamp    = self.get_clock().now().to_msg()
-                z.header.frame_id = 'base_link'
-                self._cmd_pub.publish(z)
-                time.sleep(0.1)
+        # Stand still for _settle_s seconds (default 5.0). Publishing
+        # zero twist keeps any prior cmd_vel from carrying over and also
+        # gives AMCL / costmaps clean LiDAR sweeps before the next goal.
+        hold_s = self._settle_s if self._settle_s > 0.0 else 5.0
+        self.get_logger().info(f'[ACTION] holding still {hold_s:.1f}s')
+        t_end = time.monotonic() + hold_s
+        while time.monotonic() < t_end and not self._cancel_requested:
+            z = TwistStamped()
+            z.header.stamp    = self.get_clock().now().to_msg()
+            z.header.frame_id = 'base_link'
+            self._cmd_pub.publish(z)
+            time.sleep(0.1)
 
     @staticmethod
     def _wrap(a):
