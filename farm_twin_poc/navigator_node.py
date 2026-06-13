@@ -114,6 +114,12 @@ class NavigatorNode(Node):
         # spray/fertilize spin. _spin_action scales its timeout to this speed.
         self.declare_parameter('spin_speed',     0.4)        # rad/s
         self.declare_parameter('spin_cmd_topic', '/cmd_vel')
+        # Zone arrival signal: 'pause' (default) = just STOP and dwell on the
+        # zone for zone_dwell_s so zone_monitor_node fires /farm_action — the
+        # terminal [ARRIVED]/farm_action log is the operator signal, no rotation.
+        # 'spin' = also rotate 360deg in place as an extra visual cue.
+        self.declare_parameter('zone_signal',  'pause')
+        self.declare_parameter('zone_dwell_s', 2.5)          # seconds
         # Arrival handling (map frame). We let Nav2 drive the robot close to the
         # zone CENTRE rather than bailing out the moment we touch the trigger
         # radius (that left the robot parked off-centre). Two early exits keep
@@ -136,6 +142,8 @@ class NavigatorNode(Node):
         self._home_y         = float(gp('home_y').value)
         self._home_yaw       = float(gp('home_yaw').value)
         self._spin_speed     = float(gp('spin_speed').value)
+        self._zone_signal    = str(gp('zone_signal').value)
+        self._zone_dwell_s   = float(gp('zone_dwell_s').value)
         self._arrival_radius = float(gp('arrival_radius').value)
         self._stuck_time     = float(gp('stuck_time').value)
         self._stuck_move     = float(gp('stuck_move').value)
@@ -323,7 +331,8 @@ class NavigatorNode(Node):
                 self.get_logger().info(f'[NAV] -> {wp["name"]} at ({wp["x"]}, {wp["y"]})')
                 if self._drive_to(wp['x'], wp['y'], wp['yaw']):
                     self.get_logger().info(f'[ARRIVED] {wp["name"]} — {wp["action"].upper()}')
-                    self._spin_action()  # 360° spin = spray/fertilize signal + dwell
+                    self._signal_arrival()  # dwell (default) or 360° spin; keeps
+                                            # robot on zone so /farm_action fires
                     self._completed.append(wp['name'])
                 else:
                     self.get_logger().warn(f'[SKIP] {wp["name"]} (cancelled or failed)')
@@ -348,6 +357,34 @@ class NavigatorNode(Node):
             self.get_logger().info('[HOME] reached' if ok else '[HOME] failed/cancelled')
             self._current = None
             self._state = 'idle'
+
+    def _signal_arrival(self):
+        """Signal that the robot reached a zone. Default 'pause' just dwells in
+        place (no rotation); 'spin' additionally rotates 360deg as a visual cue.
+        Either way the robot stays on the zone long enough for zone_monitor_node
+        to fire /farm_action."""
+        if self._zone_signal == 'spin':
+            self._spin_action()
+        else:
+            self._dwell_action()
+
+    def _dwell_action(self):
+        """Stop and stay on the zone for zone_dwell_s seconds — no rotation. Long
+        enough for zone_monitor_node to fire /farm_action; the terminal
+        [ARRIVED] / /farm_action log is the operator-facing signal."""
+        self.get_logger().info(f'[DWELL] pausing {self._zone_dwell_s:.1f}s on zone')
+        self._publish_stop()
+        t0 = time.monotonic()
+        while (time.monotonic() - t0 < self._zone_dwell_s
+               and not self._cancel_requested):
+            time.sleep(0.1)
+
+    def _publish_stop(self):
+        """Publish a single zero TwistStamped on the spin/cmd topic."""
+        stop = TwistStamped()
+        stop.header.stamp    = self.get_clock().now().to_msg()
+        stop.header.frame_id = 'base_link'
+        self._cmd_pub.publish(stop)
 
     def _spin_action(self, revolutions: float = 1.0):
         """Rotate ~360° in place to signal the spray/fertilize action.
@@ -381,10 +418,7 @@ class NavigatorNode(Node):
             cmd.twist.angular.z = self._spin_speed
             self._cmd_pub.publish(cmd)
             time.sleep(0.05)
-        stop = TwistStamped()
-        stop.header.stamp    = self.get_clock().now().to_msg()
-        stop.header.frame_id = 'base_link'
-        self._cmd_pub.publish(stop)
+        self._publish_stop()
 
     @staticmethod
     def _wrap(a):
