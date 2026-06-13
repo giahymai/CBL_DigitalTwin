@@ -64,9 +64,22 @@ const PADDING_M = 0.5;
 
 // TurtleBot3 Burger footprint — 138 mm wide chassis ≈ 0.069 m radius.
 // Drawn as a single filled disc to match what the LiDAR plane sees.
-const ROBOT_RADIUS_M = 0.069;
-const ROBOT_FILL     = "rgba(60, 130, 220, 0.92)";
-const ROBOT_STROKE   = "rgba(0, 0, 0, 0.65)";
+const ROBOT_RADIUS_M  = 0.069;
+const ROBOT_FILL      = "rgba(60, 130, 220, 0.92)";
+const ROBOT_STROKE    = "rgba(0, 0, 0, 0.65)";
+// Heading indicator — a line from disc centre forward, slightly past
+// the disc edge so it reads as a clear "this way is +X".
+const HEADING_LEN_M   = ROBOT_RADIUS_M * 1.35;
+const HEADING_STROKE  = "rgba(20, 20, 20, 0.95)";
+
+// Robot's spawn pose. Must match gazebo_nav2_demo.launch.py's x_pose /
+// y_pose (and nav2_sim.yaml's initial_pose). Used as the drawing
+// fallback until AMCL publishes its first /amcl_pose, so the disc is
+// already on screen the moment the page loads.
+const INITIAL_POSE = {
+  position: { x: 1.5, y: -2.0 },
+  yaw: 0.0,
+};
 
 // Recomputed each draw — kept in module scope so a future click/zoom
 // handler can convert pointer positions back to world coords.
@@ -170,17 +183,35 @@ function drawRobot(ctx) {
   // AMCL pose is in the map frame, which is what the canvas is in. /odom
   // lives in the odom frame and would render at the wrong spot without
   // applying the map->odom transform, so we deliberately ignore it.
-  const ap = STATE.amcl_pose;
-  if (!ap || !ap.pose || !ap.pose.position) return;
-  const [cx, cy] = worldToCanvas(ap.pose.position.x, ap.pose.position.y);
+  // Before AMCL converges, fall back to INITIAL_POSE so the disc is
+  // visible from the moment the page loads.
+  const pose = (STATE.amcl_pose && STATE.amcl_pose.pose) || INITIAL_POSE;
+  const px  = pose.position.x;
+  const py  = pose.position.y;
+  const yaw = (pose.yaw != null) ? pose.yaw : 0.0;
+
+  const [cx, cy] = worldToCanvas(px, py);
   const r = ROBOT_RADIUS_M * view.scale;
+
   ctx.save();
+  // Body disc.
   ctx.fillStyle   = ROBOT_FILL;
   ctx.strokeStyle = ROBOT_STROKE;
   ctx.lineWidth   = 1.5;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fill();
+  ctx.stroke();
+
+  // Heading line — world +x at yaw=0. Canvas Y is flipped relative to
+  // world, so dy uses -sin(yaw); see worldToCanvas() for the same trick.
+  const len = HEADING_LEN_M * view.scale;
+  ctx.strokeStyle = HEADING_STROKE;
+  ctx.lineWidth   = 2;
+  ctx.lineCap     = "round";
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(yaw) * len, cy - Math.sin(yaw) * len);
   ctx.stroke();
   ctx.restore();
 }
