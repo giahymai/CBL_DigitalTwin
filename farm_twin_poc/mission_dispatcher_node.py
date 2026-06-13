@@ -51,10 +51,13 @@ class MissionDispatcherNode(Node):
     def __init__(self):
         super().__init__('mission_dispatcher_node')
 
-        self._lock     = threading.Lock()
-        self._running  = False
-        self._index    = 0          # index of WAYPOINT currently in flight
-        self._awaiting = None       # name we expect to see on /destination_reached
+        self._lock      = threading.Lock()
+        self._running   = False
+        self._index     = 0          # index of WAYPOINT currently in flight
+        self._awaiting  = None       # name we expect on /destination_reached
+        self._completed: list[str] = []  # accumulates as acks arrive
+        # "idle" | "running" | "complete" | "aborted" — what the UI shows.
+        self._mission_state = 'idle'
 
         self._dest_pub   = self.create_publisher(String, '/destination',        10)
         self._status_pub = self.create_publisher(String, '/dispatcher/status',  10)
@@ -84,11 +87,14 @@ class MissionDispatcherNode(Node):
                 res.success = False
                 res.message = 'No waypoints defined'
                 return res
-            self._running = True
-            self._index   = 0
+            self._running       = True
+            self._index         = 0
+            self._completed     = []
+            self._mission_state = 'running'
         self.get_logger().info(
             f'[DISPATCH] mission started — {len(WAYPOINTS)} destinations')
         self._publish_current()
+        self._broadcast()
         res.success = True
         res.message = f'Mission started — {len(WAYPOINTS)} destinations'
         return res
@@ -96,16 +102,20 @@ class MissionDispatcherNode(Node):
     def _stop_srv(self, req, res):
         with self._lock:
             was_running = self._running
-            self._running = False
+            self._running  = False
             self._awaiting = None
+            if was_running:
+                self._mission_state = 'aborted'
         msg = ('Dispatch stopped' if was_running else 'Not running')
         self.get_logger().info(f'[DISPATCH] {msg}')
+        self._broadcast()
         res.success = True
         res.message = msg
         return res
 
     # ---------------- destination flow ----------------
     def _publish_current(self):
+        wp = None
         with self._lock:
             if not self._running:
                 return
@@ -113,17 +123,22 @@ class MissionDispatcherNode(Node):
                 self.get_logger().info(
                     f'[DISPATCH] sequence complete — '
                     f'{len(WAYPOINTS)} destinations reached')
-                self._running  = False
-                self._awaiting = None
-                return
-            wp = WAYPOINTS[self._index]
-            self._awaiting = wp['name']
+                self._running       = False
+                self._awaiting      = None
+                self._mission_state = 'complete'
+            else:
+                wp = WAYPOINTS[self._index]
+                self._awaiting = wp['name']
+        if wp is None:
+            self._broadcast()
+            return
         msg = String()
         msg.data = json.dumps(wp)
         self.get_logger().info(
             f'[DISPATCH] sending {wp["name"]} '
             f'({self._index + 1}/{len(WAYPOINTS)})')
         self._dest_pub.publish(msg)
+        self._broadcast()
 
     def _reached_cb(self, msg: String):
         try:
@@ -135,10 +150,10 @@ class MissionDispatcherNode(Node):
         name    = data.get('name')
         success = bool(data.get('success', False))
 
+        advance = False
         with self._lock:
             if not self._running:
                 return
-            # Discard stale acks from a previous mission.
             if name != self._awaiting:
                 self.get_logger().warn(
                     f'[DISPATCH] expected {self._awaiting!r}, '
@@ -147,21 +162,45 @@ class MissionDispatcherNode(Node):
             if not success:
                 self.get_logger().warn(
                     f'[DISPATCH] {name} failed — aborting mission')
-                self._running  = False
-                self._awaiting = None
-                return
-            self._index += 1
+                self._running       = False
+                self._awaiting      = None
+                self._mission_state = 'aborted'
+            else:
+                self._completed.append(name)
+                self._index += 1
+                advance = True
 
         self.get_logger().info(f'[DISPATCH] reached {name}')
-        self._publish_current()
+        if advance:
+            self._publish_current()
+        else:
+            self._broadcast()
 
     # ---------------- status ----------------
     def _broadcast(self):
+        # JSON so the web UI can render it structurally. web_server_node's
+        # _string_to_dict() parses this back out as the `json` field.
         with self._lock:
-            line = (f'running={self._running} | '
-                    f'index={self._index}/{len(WAYPOINTS)} | '
-                    f'awaiting={self._awaiting}')
-        m = String(); m.data = line
+            current_name = (WAYPOINTS[self._index]['name']
+                            if self._running and self._index < len(WAYPOINTS)
+                            else None)
+            payload = {
+                'stamp':     self.get_clock().now().nanoseconds * 1e-9,
+                'state':     self._mission_state,
+                'running':   self._running,
+                'index':     self._index,
+                'total':     len(WAYPOINTS),
+                'current':   current_name,
+                'awaiting':  self._awaiting,
+                'completed': list(self._completed),
+                # Static list — sent on every tick so the UI doesn't need a
+                # separate config endpoint. Tiny payload (4 entries).
+                'waypoints': [
+                    {'name': w['name'], 'action': w['action']}
+                    for w in WAYPOINTS
+                ],
+            }
+        m = String(); m.data = json.dumps(payload)
         self._status_pub.publish(m)
 
 

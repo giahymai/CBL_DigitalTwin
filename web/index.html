@@ -8,12 +8,44 @@
   <!-- Minimal inline reset so the page is usable even with an empty
        style.css; move into style.css whenever you want. -->
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; background: #eee; }
+    html, body { margin: 0; padding: 0; height: 100%; background: #eee;
+                 font-family: -apple-system, system-ui, "Segoe UI", sans-serif; }
     #map { display: block; width: 100vw; height: 100vh; }
+
+    /* Mission panel — top-left overlay driven by /dispatcher/status. */
+    #mission-panel {
+      position: absolute; top: 16px; left: 16px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 14px 18px; border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+      min-width: 240px; pointer-events: none;
+      font-size: 14px; line-height: 1.45;
+    }
+    #mission-panel h2 { margin: 0 0 10px 0; font-size: 15px; font-weight: 700;
+                        text-transform: uppercase; letter-spacing: 0.5px;
+                        color: #333; }
+    #mission-panel .row { color: #555; }
+    #mission-panel .row b { color: #222; font-weight: 600; }
+    #mission-panel .state-running   b { color: #1a73e8; }
+    #mission-panel .state-complete  b { color: #2c8c4a; }
+    #mission-panel .state-aborted   b { color: #c22; }
+    #mission-panel ul { list-style: none; margin: 10px 0 0 0; padding: 0;
+                        border-top: 1px solid #eee; padding-top: 8px; }
+    #mission-panel li { padding: 2px 0; color: #999; font-family: ui-monospace,
+                        SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+    #mission-panel li.done    { color: #2c8c4a; }
+    #mission-panel li.current { color: #1a73e8; font-weight: 700; }
   </style>
 </head>
 <body>
   <canvas id="map"></canvas>
+  <div id="mission-panel">
+    <h2>Mission</h2>
+    <div class="row">Status:&nbsp;<b data-field="state">—</b></div>
+    <div class="row">Progress:&nbsp;<b data-field="progress">—</b></div>
+    <div class="row">Driving to:&nbsp;<b data-field="current">—</b></div>
+    <ul data-field="waypoints"></ul>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>

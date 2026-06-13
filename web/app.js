@@ -327,6 +327,55 @@ function handleStateChange(changedKeys, state) {
                    changedKeys.includes("scan"))) {
     draw(canvasEl, ctxRef);
   }
+
+  if (changedKeys.includes("dispatcher_status")) {
+    updateMissionPanel(state.dispatcher_status);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Mission panel — driven by /dispatcher/status (auto-parsed JSON)
+// ---------------------------------------------------------------------------
+//
+// dispatcher_status arrives wrapped as { stamp, raw, json: {...} } from
+// web_server_node's _string_to_dict(). The actual payload lives under
+// `.json` and looks like:
+//   { state, running, index, total, current, awaiting, completed: [...],
+//     waypoints: [{name, action}, ...] }
+function updateMissionPanel(wrapped) {
+  const panel = document.getElementById("mission-panel");
+  if (!panel) return;
+  if (!wrapped || !wrapped.json) return;
+  const s = wrapped.json;
+
+  // State row — text + colour class so "Running" reads blue, etc.
+  const stateText = ({
+    idle:     "Idle",
+    running:  "Running",
+    complete: "Complete",
+    aborted:  "Aborted",
+  })[s.state] || s.state || "—";
+  panel.classList.remove("state-running", "state-complete", "state-aborted");
+  if (s.state && s.state !== "idle") panel.classList.add("state-" + s.state);
+  panel.querySelector("[data-field=state]").textContent    = stateText;
+  panel.querySelector("[data-field=progress]").textContent =
+      `${s.completed ? s.completed.length : 0} / ${s.total ?? "—"}`;
+  panel.querySelector("[data-field=current]").textContent  =
+      s.current || "—";
+
+  // Waypoint list — completed = green checkmark, current = blue arrow,
+  // pending = grey bullet.
+  const ul = panel.querySelector("[data-field=waypoints]");
+  ul.innerHTML = "";
+  const done = new Set(s.completed || []);
+  for (const wp of (s.waypoints || [])) {
+    const li = document.createElement("li");
+    let marker = "·";
+    if (done.has(wp.name))           { marker = "✓"; li.classList.add("done"); }
+    else if (wp.name === s.current)  { marker = "→"; li.classList.add("current"); }
+    li.textContent = `${marker} ${wp.name}`;
+    ul.appendChild(li);
+  }
 }
 window.onStateChange = handleStateChange;
 

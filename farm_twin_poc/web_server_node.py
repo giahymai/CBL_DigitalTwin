@@ -71,6 +71,7 @@ added under `pose.yaw` for convenience.
   farm_action       std_msgs/String            (auto-parsed if JSON)
   navigator_status  std_msgs/String            (auto-parsed if JSON)
   dt_status         std_msgs/String            (auto-parsed if JSON)
+  dispatcher_status std_msgs/String            (JSON: state/index/total/waypoints/...)
 
 OccupancyGrid `data` is base64-encoded so it survives JSON without bloating
 the payload. Decode in JS with:
@@ -288,7 +289,10 @@ class WebServerNode(Node):
         self.declare_parameter('host', '0.0.0.0')
         self.declare_parameter('port', 8080)
         self.declare_parameter('scan_decimate', 4)
-        self.declare_parameter('stream_rate_hz', 10.0)
+        # 30 Hz matches /odom's native publish rate from the Gazebo bridge,
+        # so pushing higher gains nothing (no new data between ticks).
+        # Lower if you see CPU pressure or bandwidth issues over the link.
+        self.declare_parameter('stream_rate_hz', 30.0)
 
         self._scan_decimate = int(
             self.get_parameter('scan_decimate').value)
@@ -317,8 +321,9 @@ class WebServerNode(Node):
             'global_costmap':   None,
             'local_costmap':    None,
             'farm_action':      None,
-            'navigator_status': None,
-            'dt_status':        None,
+            'navigator_status':  None,
+            'dt_status':         None,
+            'dispatcher_status': None,
         }
 
         # Sensors / odometry.
@@ -360,6 +365,8 @@ class WebServerNode(Node):
             '/navigator/status', self._cb_nav_status, 10)
         self.create_subscription(String,
             '/dt/status', self._cb_dt_status, 10)
+        self.create_subscription(String,
+            '/dispatcher/status', self._cb_dispatcher_status, 10)
 
         # Static web root — created by setup.py from <pkg_root>/web/.
         self._web_root = os.path.join(
@@ -504,6 +511,9 @@ class WebServerNode(Node):
 
     def _cb_dt_status(self, msg):
         self._store('dt_status', _string_to_dict(msg, self._now()))
+
+    def _cb_dispatcher_status(self, msg):
+        self._store('dispatcher_status', _string_to_dict(msg, self._now()))
 
 
 # ---------------------------------------------------------------------------
