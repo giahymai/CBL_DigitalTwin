@@ -38,7 +38,7 @@ from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch.launch_description_sources import (PythonLaunchDescriptionSource,
-                                               XMLLaunchDescriptionSource)
+                                               AnyLaunchDescriptionSource)
 from launch.substitutions import Command
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -196,7 +196,7 @@ def generate_launch_description():
 
         # 8) rosbridge_websocket — lets the browser dashboard talk to ROS.
         IncludeLaunchDescription(
-            XMLLaunchDescriptionSource(
+            AnyLaunchDescriptionSource(
                 os.path.join(get_package_share_directory('rosbridge_server'),
                              'launch', 'rosbridge_websocket_launch.xml')
             ),
