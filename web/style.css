@@ -43,9 +43,12 @@ html, body {
 
 #map { display: block; width: 100vw; height: 100vh; }
 
-/* ── Side panel ──────────────────────────────────────────────────────── */
-#side-panel {
-  position: absolute; top: 16px; left: 16px;
+/* ── Side panels ─────────────────────────────────────────────────────── */
+/* Two floating panels over the canvas: controls on the left, the live twin
+   readout + action feed on the right. Shared chrome lives in .panel; the
+   IDs only pin each one to its edge. */
+.panel {
+  position: absolute; top: 16px;
   width: 296px; max-height: calc(100vh - 32px);
   display: flex; flex-direction: column;
   background: var(--panel);
@@ -56,6 +59,8 @@ html, body {
   font-size: 14px; line-height: 1.45;
   pointer-events: auto;
 }
+#side-panel       { left: 16px; }
+#side-panel-right { right: 16px; }
 
 /* Header — brand + live connection indicator. */
 #panel-header {
@@ -87,22 +92,24 @@ html, body {
 .conn.offline .conn-dot  { background: var(--danger); }
 
 /* Sections ───────────────────────────────────────────────────────────── */
-#side-panel .section { padding: 15px 18px; border-top: 1px solid var(--border); }
-#side-panel h2 {
+.panel .section { padding: 15px 18px; border-top: 1px solid var(--border); }
+/* First section in a panel sits flush under the rounded top — no divider. */
+.panel .section:first-child { border-top: 0; }
+.panel h2 {
   margin: 0 0 12px 0; font-size: 11.5px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-dim);
 }
 
 /* Label-left / value-right rows for clean alignment. */
-#side-panel .row {
+.panel .row {
   display: flex; align-items: baseline; justify-content: space-between;
   gap: 12px; padding: 3px 0; color: var(--text-dim);
 }
-#side-panel .row .row-label { font-size: 13px; }
-#side-panel .row b {
+.panel .row .row-label { font-size: 13px; }
+.panel .row b {
   color: var(--text); font-weight: 600; text-align: right;
 }
-#side-panel .mono { font-family: var(--mono); font-size: 12.5px; }
+.panel .mono { font-family: var(--mono); font-size: 12.5px; }
 
 /* Status badges (mission state + robot state) ───────────────────────────*/
 .badge {
@@ -203,7 +210,7 @@ html, body {
 
 /* LiDAR error banner — sits between the panel header and the Mission
    section so it never gets visually buried by status rows. */
-#side-panel .banner {
+.panel .banner {
   margin: 0 14px 6px;
   padding: 8px 12px;
   background: rgba(255,77,77,0.12);
@@ -212,7 +219,7 @@ html, body {
   color: var(--danger);
   font-size: 13px; line-height: 1.4;
 }
-#side-panel .banner b { margin-right: 4px; }
+.panel .banner b { margin-right: 4px; }
 
 /* ── Twin Status section ─────────────────────────────────────────────── */
 /* Robot-state badge colours — match the zone discs on the canvas. */
@@ -268,7 +275,10 @@ html, body {
 }
 
 /* ── Responsive — narrow viewports ───────────────────────────────────── */
-@media (max-width: 560px) {
-  #side-panel { left: 8px; right: 8px; top: 8px; width: auto;
-                max-height: calc(100vh - 16px); }
+/* No room for two side-by-side panels: stack them full-width, controls on
+   top, twin/actions on the bottom half (its action feed keeps scrolling). */
+@media (max-width: 720px) {
+  .panel            { left: 8px; right: 8px; width: auto; }
+  #side-panel       { top: 8px;    max-height: 48vh; }
+  #side-panel-right { top: auto; bottom: 8px; max-height: 46vh; }
 }
