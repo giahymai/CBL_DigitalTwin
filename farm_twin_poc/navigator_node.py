@@ -181,6 +181,7 @@ class NavigatorNode(Node):
             self._cancel_requested = False
             self._state   = 'navigating'
             self._current = dest['name']
+            self._publish_status()   # don't wait for the 3 s heartbeat
             x      = float(dest['x'])
             y      = float(dest['y'])
             yaw    = float(dest.get('yaw', 0.0))
@@ -201,6 +202,7 @@ class NavigatorNode(Node):
             self._current = None
             if not self._cancel_requested:
                 self._state = 'idle'
+            self._publish_status()
             self._busy.release()
             # Always tell the dispatcher we're done with this one, success or
             # not — otherwise the mission would stall waiting for an ack.
@@ -288,12 +290,14 @@ class NavigatorNode(Node):
             self._state = 'returning_home'
             self._current = 'home'
             self._cancel_requested = False
+            self._publish_status()
             self.get_logger().info(
                 f'[HOME] -> ({self._home_x}, {self._home_y})')
             ok = self._drive_to(self._home_x, self._home_y, self._home_yaw, timeout_s=180.0)
             self.get_logger().info('[HOME] reached' if ok else '[HOME] failed/cancelled')
             self._current = None
             self._state = 'idle'
+            self._publish_status()
 
     def _spin_action(self, action: str = '', revolutions: float = 1.0):
         """Stand still for ~5 s to simulate the spray/fertilize action.
@@ -308,6 +312,9 @@ class NavigatorNode(Node):
             self._state = 'spraying'
         elif action == 'fertilize':
             self._state = 'fertilizing'
+        # Push the spraying/fertilizing state out now so the Twin Status
+        # badge flips in step with the action appearing in the history.
+        self._publish_status()
 
         # Stand still for _settle_s seconds (default 5.0). Publishing
         # zero twist keeps any prior cmd_vel from carrying over and also
@@ -328,6 +335,13 @@ class NavigatorNode(Node):
 
     # ---------------- status ----------------
     def _broadcast(self):
+        # Periodic heartbeat (every 3 s) so position keeps refreshing even
+        # when the state is static. State *transitions* publish immediately
+        # via _publish_status() so the Twin Status badge never lags the
+        # action history by up to a full broadcast interval.
+        self._publish_status()
+
+    def _publish_status(self):
         # JSON so the web UI can render it structurally. web_server_node's
         # _string_to_dict() parses this back out under the `json` field.
         payload = {
