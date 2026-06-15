@@ -142,57 +142,6 @@ curl http://localhost:8080/api/topics
 
 ---
 
-## Sourcing (read this first)
-
-Every terminal that runs a `ros2` command must source **three** overlays,
-in this order, before anything works:
-
-```bash
-source /opt/ros/jazzy/setup.bash             # 1. ROS 2 core
-source /opt/turtlebot3_ws/install/setup.bash # 2. turtlebot3_gazebo / _navigation2
-source /ws/install/setup.bash                # 3. farm_twin_poc (this package)
-export TURTLEBOT3_MODEL=burger
-```
-
-> **Why all three?** This workspace was built **without** turtlebot3_ws as an
-> underlay, so `/ws/install/setup.bash` does **not** pull in `turtlebot3_gazebo`
-> by itself. If you skip line 2, the launch dies immediately with:
-> ```
-> PackageNotFoundError: "package 'turtlebot3_gazebo' not found,
->   searching: ['/ws/install/farm_twin_poc', '/opt/ros/jazzy']"
-> ```
-> The fix is always "source line 2". Verify with `echo $AMENT_PREFIX_PATH` —
-> it must contain `/opt/turtlebot3_ws/install`.
-
-To avoid retyping it in every terminal, append the block to `~/.bashrc`
-inside the container:
-
-```bash
-cat >> ~/.bashrc <<'EOF'
-source /opt/ros/jazzy/setup.bash
-source /opt/turtlebot3_ws/install/setup.bash
-source /ws/install/setup.bash
-export TURTLEBOT3_MODEL=burger
-EOF
-```
-
----
-
-## Build
-
-```bash
-cd /ws
-source /opt/ros/jazzy/setup.bash
-source /opt/turtlebot3_ws/install/setup.bash
-colcon build --packages-select farm_twin_poc
-source install/setup.bash
-export TURTLEBOT3_MODEL=burger
-```
-
-If you're inside the `turtlebot3_container`, also `export
-RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` (see the Docker section above).
-
----
 
 ## Step-by-step demo
 
