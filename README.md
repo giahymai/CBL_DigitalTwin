@@ -142,10 +142,48 @@ curl http://localhost:8080/api/topics
 
 ---
 
+## Sourcing (read this first)
+
+Every terminal that runs a `ros2` command must source **three** overlays,
+in this order, before anything works:
+
+```bash
+source /opt/ros/jazzy/setup.bash             # 1. ROS 2 core
+source /opt/turtlebot3_ws/install/setup.bash # 2. turtlebot3_gazebo / _navigation2
+source /ws/install/setup.bash                # 3. farm_twin_poc (this package)
+export TURTLEBOT3_MODEL=burger
+```
+
+> **Why all three?** This workspace was built **without** turtlebot3_ws as an
+> underlay, so `/ws/install/setup.bash` does **not** pull in `turtlebot3_gazebo`
+> by itself. If you skip line 2, the launch dies immediately with:
+> ```
+> PackageNotFoundError: "package 'turtlebot3_gazebo' not found,
+>   searching: ['/ws/install/farm_twin_poc', '/opt/ros/jazzy']"
+> ```
+> The fix is always "source line 2". Verify with `echo $AMENT_PREFIX_PATH` —
+> it must contain `/opt/turtlebot3_ws/install`.
+
+To avoid retyping it in every terminal, append the block to `~/.bashrc`
+inside the container:
+
+```bash
+cat >> ~/.bashrc <<'EOF'
+source /opt/ros/jazzy/setup.bash
+source /opt/turtlebot3_ws/install/setup.bash
+source /ws/install/setup.bash
+export TURTLEBOT3_MODEL=burger
+EOF
+```
+
+---
+
 ## Build
 
 ```bash
-cd ~/turtlebot3_ws
+cd /ws
+source /opt/ros/jazzy/setup.bash
+source /opt/turtlebot3_ws/install/setup.bash
 colcon build --packages-select farm_twin_poc
 source install/setup.bash
 export TURTLEBOT3_MODEL=burger
@@ -167,6 +205,8 @@ takes about a minute end-to-end.
 
 ```bash
 cd /ws
+source /opt/ros/jazzy/setup.bash
+source /opt/turtlebot3_ws/install/setup.bash
 source install/setup.bash
 export TURTLEBOT3_MODEL=burger
 ros2 launch farm_twin_poc physical_entity.launch.py
@@ -185,7 +225,10 @@ you'll see the TurtleBot3 spawned at `(1.5, −2.0)` inside the farm.
 
 ```bash
 cd /ws
+source /opt/ros/jazzy/setup.bash
+source /opt/turtlebot3_ws/install/setup.bash
 source install/setup.bash
+export TURTLEBOT3_MODEL=burger
 ros2 launch farm_twin_poc digital_entity.launch.py
 ```
 
@@ -376,6 +419,14 @@ editing `initial_pose` in `config/nav2_sim.yaml` (or override `x_pose:=` /
 
 ## Troubleshooting
 
+- **`PackageNotFoundError: package 'turtlebot3_gazebo' not found`** at
+  launch — the terminal didn't source the turtlebot3 underlay. The
+  `searching: [...]` list in the error will be missing
+  `/opt/turtlebot3_ws/install`. Run `source
+  /opt/turtlebot3_ws/install/setup.bash` (see **Sourcing** above), then
+  re-launch. The trailing `InvalidFrontendLaunchFileError ... syntax error`
+  is just ROS's fallback message — the launch file is fine; the real error
+  is the `PackageNotFoundError` above it.
 - **Nav2 crashes with `undefined symbol: ... fastcdr ...`** inside the
   `turtlebot3_container` Docker image — `export
   RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` before launching.
