@@ -141,6 +141,16 @@ curl http://localhost:8080/api/topics
 ```
 
 ---
+## Build
+
+```bash
+cd /ws
+source /opt/ros/jazzy/setup.bash
+source /opt/turtlebot3_ws/install/setup.bash
+colcon build --packages-select farm_twin_poc
+source install/setup.bash
+export TURTLEBOT3_MODEL=burger
+```
 
 
 ## Step-by-step demo
