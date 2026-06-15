@@ -108,7 +108,8 @@ from geometry_msgs.msg import (
     TwistStamped,
 )
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
-from sensor_msgs.msg import BatteryState, Imu
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import BatteryState, Imu, LaserScan
 from std_msgs.msg import Float64, String
 from std_srvs.srv import Trigger
 
@@ -304,7 +305,21 @@ class WebServerNode(Node):
             'navigator_status':  None,
             'dt_status':         None,
             'dispatcher_status': None,
+            # Lightweight LiDAR health summary — see _cb_scan / _lidar_tick.
+            # Never carries the full ranges array; just enough for the UI
+            # to flag "working / stale / not working".
+            'lidar':             None,
         }
+        # Wall-clock monotonic of the last /scan message we saw, used by
+        # _lidar_tick to time out the sensor.
+        self._last_scan_mono: Optional[float] = None
+        # When True, the UI has asked us to fake a LiDAR fault. The
+        # /scan callback still runs but _lidar_tick reports 'offline'
+        # so downstream nodes (mission_dispatcher) can react.
+        self._force_lidar_offline: bool = False
+        # Last status we published on /lidar_health — we only re-publish
+        # when it changes so the dispatcher doesn't see spam.
+        self._last_lidar_pub: Optional[str] = None
 
         # Sensors / odometry.
         self.create_subscription(Odometry,
@@ -315,6 +330,11 @@ class WebServerNode(Node):
             '/imu', self._cb_imu, 10)
         self.create_subscription(BatteryState,
             '/battery_state', self._cb_battery, 10)
+        # LiDAR — best-effort sensor QoS to match the TB3 driver / Nav2.
+        # We don't forward the ranges array (too big); _cb_scan stores
+        # only a health summary.
+        self.create_subscription(LaserScan,
+            '/scan', self._cb_scan, qos_profile_sensor_data)
 
         # Nav2 command + goal + plans.
         self.create_subscription(TwistStamped,
@@ -355,6 +375,12 @@ class WebServerNode(Node):
         # snaps to the value on the next tick.
         self._battery_set_pub = self.create_publisher(
             Float64, '/battery_set_level', 10)
+        # /lidar_health — latched String of JSON {status, age_s, forced}
+        # so the dispatcher can react to LiDAR loss without re-deriving
+        # liveness itself. transient_local means late subscribers still
+        # get the current value on connect.
+        self._lidar_health_pub = self.create_publisher(
+            String, '/lidar_health', self._LATCHED_QOS)
 
         # Static web root — created by setup.py from <pkg_root>/web/.
         self._web_root = os.path.join(
@@ -373,6 +399,10 @@ class WebServerNode(Node):
         # SSE broadcast tick — coalesces N callbacks per period into one
         # delta event so a 60 Hz /odom topic doesn't become 60 events/s.
         self.create_timer(stream_period, self._sse_broadcast)
+        # LiDAR liveness — re-publishes the `lidar` cache entry whenever
+        # the derived status (ok / stale / offline) flips. Runs at 2 Hz so
+        # the offline transition is visible within ~0.5 s of /scan stopping.
+        self.create_timer(0.5, self._lidar_tick)
 
         self.get_logger().info(
             f'web_server_node up — http://{host}:{port}/  '
@@ -529,6 +559,108 @@ class WebServerNode(Node):
     def _cb_dispatcher_status(self, msg):
         self._store('dispatcher_status', _string_to_dict(msg, self._now()))
 
+    # -- LiDAR health -----------------------------------------------------
+
+    # Thresholds — TB3 Burger /scan runs at ~5 Hz, so 1 s of silence is
+    # already two missed sweeps. 3 s is "no longer publishing".
+    _LIDAR_STALE_S   = 1.0
+    _LIDAR_OFFLINE_S = 3.0
+
+    def _cb_scan(self, msg: LaserScan) -> None:
+        # Count valid returns so the UI can spot a covered/dead sensor
+        # that still ticks but reports inf for every beam.
+        ranges = msg.ranges
+        rmin, rmax = msg.range_min, msg.range_max
+        valid = 0
+        for r in ranges:
+            if math.isfinite(r) and rmin <= r <= rmax:
+                valid += 1
+        self._last_scan_mono = time.monotonic()
+        # When a fault is being simulated, the topic is still live but
+        # we want downstream nodes to see 'offline'. _lidar_tick handles
+        # the override; here we just record the raw counters so the
+        # next "Resume" returns immediately to 'ok'.
+        status = 'offline' if self._force_lidar_offline else 'ok'
+        self._store('lidar', {
+            'stamp':       _stamp(msg),
+            'status':      status,
+            'age_s':       0.0,
+            'beam_count':  len(ranges),
+            'valid_count': valid,
+            'range_min':   rmin,
+            'range_max':   rmax,
+            'forced':      self._force_lidar_offline,
+        })
+        self._publish_lidar_health(status, 0.0)
+
+    def _lidar_tick(self) -> None:
+        """Demote the cached status to stale / offline once /scan stops."""
+        with self._lock:
+            current = copy.deepcopy(self._state.get('lidar'))
+        if self._last_scan_mono is None:
+            # Never received a scan. Publish an explicit "offline" once
+            # so the UI shows the sensor as down instead of "—".
+            if current and current.get('status') == 'offline':
+                return
+            self._store('lidar', {
+                'stamp':       0.0,
+                'status':      'offline',
+                'age_s':       None,
+                'beam_count':  0,
+                'valid_count': 0,
+                'range_min':   0.0,
+                'range_max':   0.0,
+                'forced':      self._force_lidar_offline,
+            })
+            self._publish_lidar_health('offline', None)
+            return
+
+        age = time.monotonic() - self._last_scan_mono
+        if self._force_lidar_offline:
+            new_status = 'offline'
+        elif age >= self._LIDAR_OFFLINE_S:
+            new_status = 'offline'
+        elif age >= self._LIDAR_STALE_S:
+            new_status = 'stale'
+        else:
+            new_status = 'ok'
+        if current and current.get('status') == new_status \
+                and current.get('forced') == self._force_lidar_offline:
+            # Status unchanged — don't churn the SSE stream every 0.5 s.
+            return
+        if current:
+            current['status'] = new_status
+            current['age_s']  = round(age, 2)
+            current['forced'] = self._force_lidar_offline
+            self._store('lidar', current)
+        self._publish_lidar_health(new_status, round(age, 2))
+
+    def _publish_lidar_health(self, status: str, age_s) -> None:
+        """Push /lidar_health only when the status flips so subscribers
+        don't see a steady stream of identical messages."""
+        if status == self._last_lidar_pub:
+            return
+        self._last_lidar_pub = status
+        msg = String()
+        msg.data = json.dumps({
+            'status': status,
+            'age_s':  age_s,
+            'forced': self._force_lidar_offline,
+        })
+        self._lidar_health_pub.publish(msg)
+
+    def set_lidar_fault(self, fault: bool) -> dict:
+        """Toggle the simulated-fault flag. _lidar_tick picks up the new
+        value on its next run (within 0.5 s)."""
+        self._force_lidar_offline = bool(fault)
+        # Run the tick immediately so the UI / dispatcher don't have to
+        # wait up to 0.5 s for the state flip.
+        self._lidar_tick()
+        return {'success': True,
+                'message': ('LiDAR fault simulated' if fault
+                            else 'LiDAR fault cleared'),
+                'fault':   self._force_lidar_offline}
+
 
 # ---------------------------------------------------------------------------
 # HTTP handler
@@ -610,6 +742,16 @@ def _make_handler(node: 'WebServerNode', web_root: str):
                 status = (HTTPStatus.OK if result['success']
                           else HTTPStatus.BAD_REQUEST)
                 return self._send_json(result, status=status)
+            if path == '/api/set_lidar_fault':
+                length = int(self.headers.get('Content-Length') or 0)
+                raw = self.rfile.read(length) if length > 0 else b''
+                try:
+                    body = json.loads(raw) if raw else {}
+                except json.JSONDecodeError:
+                    return self._send_error(
+                        HTTPStatus.BAD_REQUEST, 'invalid JSON body')
+                fault = bool(body.get('fault'))
+                return self._send_json(node.set_lidar_fault(fault))
             return self._send_error(
                 HTTPStatus.NOT_FOUND, f'no POST handler for {path}')
 

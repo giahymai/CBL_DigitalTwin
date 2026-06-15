@@ -42,6 +42,12 @@ import threading
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import (
+    QoSDurabilityPolicy,
+    QoSHistoryPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
+)
 from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
@@ -86,14 +92,33 @@ class MissionDispatcherNode(Node):
         self._battery_seen          = False
         self._low_battery_triggered = False
 
+        # LiDAR-fault latch — set when /lidar_health flips to offline, so
+        # the UI banner stays up across status-tick re-publishes and the
+        # mission can't auto-start while the sensor is down. Cleared once
+        # we see an 'ok' status.
+        self._lidar_fault = False
+
         self._dest_pub   = self.create_publisher(String, '/destination',        10)
         self._status_pub = self.create_publisher(String, '/dispatcher/status',  10)
         self.create_subscription(String,       '/destination_reached', self._reached_cb, 10)
         self.create_subscription(BatteryState, '/battery_state',       self._battery_cb, 10)
+        # /lidar_health — web_server_node publishes a {status} JSON
+        # string. Uses the latched-QoS profile to survive a late
+        # subscription.
+        lidar_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST,
+        )
+        self.create_subscription(String, '/lidar_health',
+                                 self._lidar_health_cb, lidar_qos)
         self.create_service(Trigger, '/start_navigation', self._start_srv)
         self.create_service(Trigger, '/stop_dispatch',    self._stop_srv)
         # Client we use to send the robot home when the battery is low.
         self._return_home_client = self.create_client(Trigger, '/return_home')
+        # Client for cancelling an in-flight nav goal when LiDAR drops.
+        self._stop_nav_client    = self.create_client(Trigger, '/stop_navigation')
 
         self.create_timer(3.0, self._broadcast)
 
@@ -125,6 +150,12 @@ class MissionDispatcherNode(Node):
                 res.message = (f'Battery too low ({self._battery_pct:.0f}%) '
                                f'— charge above {self._low_thresh:.0f}% first')
                 return res
+            # Don't start with a known LiDAR fault — the robot would
+            # immediately stop again.
+            if self._lidar_fault:
+                res.success = False
+                res.message = 'LiDAR offline — clear the fault first'
+                return res
             self._running               = True
             self._index                 = 0
             self._completed             = []
@@ -155,6 +186,7 @@ class MissionDispatcherNode(Node):
     # ---------------- destination flow ----------------
     def _publish_current(self):
         wp = None
+        sequence_done = False
         with self._lock:
             if not self._running:
                 return
@@ -165,10 +197,19 @@ class MissionDispatcherNode(Node):
                 self._running       = False
                 self._awaiting      = None
                 self._mission_state = 'complete'
+                sequence_done       = True
             else:
                 wp = WAYPOINTS[self._index]
                 self._awaiting = wp['name']
         if wp is None:
+            if sequence_done:
+                # All waypoints visited — drive back to the spawn pose.
+                # Reuses the same /return_home path as the low-battery
+                # trigger; safe because the navigator's home pose lives
+                # there, not here.
+                self.get_logger().info(
+                    '[DISPATCH] returning home after sequence completion')
+                self._call_return_home()
             self._broadcast()
             return
         msg = String()
@@ -258,6 +299,46 @@ class MissionDispatcherNode(Node):
             return
         self._return_home_client.call_async(Trigger.Request())
 
+    # ---------------- lidar watch ----------------
+    def _lidar_health_cb(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+        except json.JSONDecodeError:
+            return
+        status = data.get('status')
+        if status == 'offline' and not self._lidar_fault:
+            self._lidar_fault = True
+            self.get_logger().error(
+                '[DISPATCH] LiDAR offline — halting robot')
+            with self._lock:
+                if self._running:
+                    self._running       = False
+                    self._awaiting      = None
+                    self._mission_state = 'aborted'
+            self._call_stop_navigation()
+            self._broadcast()
+        elif status == 'ok' and self._lidar_fault:
+            self._lidar_fault = False
+            self.get_logger().info('[DISPATCH] LiDAR recovered')
+            self._broadcast()
+
+    def _call_stop_navigation(self) -> None:
+        """Cancel any in-flight nav goal. Used when the LiDAR drops out;
+        non-blocking so the subscriber callback returns immediately."""
+        if not self._stop_nav_client.service_is_ready():
+            threading.Thread(
+                target=self._wait_then_call_stop_navigation,
+                daemon=True).start()
+            return
+        self._stop_nav_client.call_async(Trigger.Request())
+
+    def _wait_then_call_stop_navigation(self) -> None:
+        if self._stop_nav_client.wait_for_service(timeout_sec=3.0):
+            self._stop_nav_client.call_async(Trigger.Request())
+        else:
+            self.get_logger().warn(
+                '[DISPATCH] /stop_navigation not available — robot may keep moving')
+
     def _wait_then_call_return_home(self) -> None:
         if self._return_home_client.wait_for_service(timeout_sec=3.0):
             self._return_home_client.call_async(Trigger.Request())
@@ -288,6 +369,8 @@ class MissionDispatcherNode(Node):
                 'battery_pct':  (round(self._battery_pct, 1)
                                  if self._battery_seen else None),
                 'low_battery':  self._low_battery_triggered,
+                # LiDAR fault latch — drives the UI error banner.
+                'lidar_fault':  self._lidar_fault,
                 # Static list — sent on every tick so the UI doesn't need a
                 # separate config endpoint. Tiny payload (4 entries).
                 'waypoints': [

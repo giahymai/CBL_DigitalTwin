@@ -13,6 +13,9 @@
       <span class="brand">Farm Twin</span>
       <span class="conn" data-field="conn"><span class="conn-dot"></span>Offline</span>
     </header>
+    <div id="lidar-banner" class="banner" hidden>
+      <b>LiDAR offline</b><span data-field="lidar-banner-msg">— robot halted</span>
+    </div>
 
     <section id="mission-section" class="section">
       <h2>Mission</h2>
@@ -30,6 +33,9 @@
                placeholder="0-100" inputmode="decimal">
         <button id="set-battery-btn" type="button">Apply</button>
       </div>
+      <button id="lidar-fault-btn" type="button" class="fault-btn">
+        Simulate LiDAR fault
+      </button>
     </section>
 
     <section id="twin-section" class="section">
@@ -39,6 +45,7 @@
       <div class="row"><span class="row-label">Goal</span><b data-field="robot-goal">—</b></div>
       <div class="row"><span class="row-label">Sync error</span><b data-field="sync-error" class="mono">—</b></div>
       <div class="row"><span class="row-label">Zones visited</span><b data-field="zones-visited" class="mono">—</b></div>
+      <div class="row" data-row="lidar"><span class="row-label">LiDAR</span><b data-field="lidar-state" class="badge">—</b></div>
     </section>
 
     <section id="actions-section" class="section">

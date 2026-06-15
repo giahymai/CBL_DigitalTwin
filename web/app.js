@@ -255,6 +255,7 @@ window.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("resize", () => resizeCanvas(canvasEl, ctxRef));
   wireStartButton();
   wireBatteryControl();
+  wireLidarFaultButton();
   connectLiveState();
 });
 
@@ -355,6 +356,62 @@ function wireBatteryControl() {
 }
 
 // ---------------------------------------------------------------------------
+// LiDAR fault button — POSTs {fault: true|false} to /api/set_lidar_fault.
+// The web server stops publishing healthy /lidar_health, the dispatcher
+// halts the mission, and the UI banner appears via updateLidarBanner.
+// The button toggles between "Simulate" and "Clear" based on the latched
+// dispatcher_status.lidar_fault flag.
+// ---------------------------------------------------------------------------
+
+function wireLidarFaultButton() {
+  const btn = document.getElementById("lidar-fault-btn");
+  if (!btn) return;
+  if (location.protocol === "file:") {
+    btn.disabled = true;
+    btn.textContent = "Simulate LiDAR fault (server only)";
+    return;
+  }
+  btn.addEventListener("click", async () => {
+    const wantFault = !btn.classList.contains("active");
+    btn.disabled = true;
+    try {
+      const r = await fetch("/api/set_lidar_fault", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ fault: wantFault }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        console.warn("/api/set_lidar_fault failed:", body);
+      }
+    } catch (err) {
+      console.warn("/api/set_lidar_fault error:", err);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+// Reflect the dispatcher's latched lidar_fault in the button label /
+// active style. Called from updateLidarBanner so we don't duplicate the
+// flag parse.
+function setLidarFaultButtonState(faulted) {
+  const btn = document.getElementById("lidar-fault-btn");
+  if (!btn || location.protocol === "file:") return;
+  btn.classList.toggle("active", !!faulted);
+  btn.textContent = faulted ? "Clear LiDAR fault" : "Simulate LiDAR fault";
+}
+
+// Show / hide the LiDAR error banner and sync the fault button label.
+// Called from updateMissionPanel because dispatcher_status carries the
+// authoritative lidar_fault latch.
+function updateLidarBanner(faulted) {
+  const banner = document.getElementById("lidar-banner");
+  if (banner) banner.hidden = !faulted;
+  setLidarFaultButtonState(faulted);
+}
+
+// ---------------------------------------------------------------------------
 // Live state — Server-Sent Events from web_server_node
 // ---------------------------------------------------------------------------
 //
@@ -404,12 +461,13 @@ function handleStateChange(changedKeys, state) {
     updateActionHistory(state.dt_status);
   }
   // The Twin Status panel pulls from navigator_status, amcl_pose,
-  // dispatcher_status (for the low_battery latch) and dt_status, so
-  // refresh on any of them.
+  // dispatcher_status (for the low_battery latch), dt_status and lidar,
+  // so refresh on any of them.
   if (changedKeys.includes("navigator_status") ||
       changedKeys.includes("amcl_pose") ||
       changedKeys.includes("dispatcher_status") ||
-      changedKeys.includes("dt_status")) {
+      changedKeys.includes("dt_status") ||
+      changedKeys.includes("lidar")) {
     updateTwinStatus();
   }
 }
@@ -482,6 +540,34 @@ function updateTwinStatus() {
       zones.length === 0
           ? "0"
           : `${zones.length}  (${initials})`;
+
+  // LiDAR health — web_server_node publishes a tiny summary on each
+  // /scan message and re-publishes it when the status flips (stale /
+  // offline). Treat missing entry the same as "offline" so the row
+  // never silently lies about the sensor being live.
+  const lidar = STATE.lidar;
+  const lidarRow = panel.querySelector('[data-row="lidar"]');
+  const lidarEl  = panel.querySelector("[data-field=lidar-state]");
+  lidarRow.classList.remove(
+      "lidar-ok", "lidar-stale", "lidar-offline");
+  const lidarStatus = (lidar && lidar.status) || "offline";
+  const lidarLabel  = ({
+    ok:      "Working",
+    stale:   "Stale",
+    offline: "Not working",
+  })[lidarStatus] || lidarStatus;
+  let lidarText = lidarLabel;
+  if (lidar && lidarStatus === "ok"
+      && typeof lidar.valid_count === "number"
+      && typeof lidar.beam_count  === "number"
+      && lidar.beam_count > 0) {
+    lidarText += `  (${lidar.valid_count}/${lidar.beam_count} beams)`;
+  } else if (lidar && lidarStatus !== "ok"
+             && typeof lidar.age_s === "number") {
+    lidarText += `  (${lidar.age_s.toFixed(1)}s old)`;
+  }
+  lidarEl.textContent = lidarText;
+  lidarRow.classList.add("lidar-" + lidarStatus);
 }
 
 // ---------------------------------------------------------------------------
@@ -616,6 +702,7 @@ function updateMissionPanel(wrapped) {
   panel.querySelector("[data-field=current]").textContent  =
       s.current || "—";
   setStartButtonRunning(!!s.running);
+  updateLidarBanner(!!s.lidar_fault);
 
   // Waypoint list — completed = green checkmark, current = blue arrow,
   // pending = grey bullet.

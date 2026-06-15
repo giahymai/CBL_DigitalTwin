@@ -186,6 +186,34 @@ html, body {
 .battery-set button:hover:not(:disabled) { background: var(--accent); }
 .battery-set button:disabled { background: #2a323f; color: #7c8694; cursor: not-allowed; }
 
+/* Simulate LiDAR fault — danger-tinted "secondary" button. Goes solid red
+   while the fault is latched so the user has an obvious clear button. */
+.fault-btn {
+  display: block; width: 100%; margin-top: 10px; padding: 7px 12px;
+  font: inherit; font-size: 13px; font-weight: 600;
+  color: var(--danger); background: transparent;
+  border: 1px solid var(--danger); border-radius: var(--radius-sm);
+  cursor: pointer; transition: background 120ms ease, color 120ms ease;
+}
+.fault-btn:hover:not(:disabled) { background: rgba(255,77,77,0.10); }
+.fault-btn.active {
+  background: var(--danger); color: #fff; border-color: var(--danger);
+}
+.fault-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* LiDAR error banner — sits between the panel header and the Mission
+   section so it never gets visually buried by status rows. */
+#side-panel .banner {
+  margin: 0 14px 6px;
+  padding: 8px 12px;
+  background: rgba(255,77,77,0.12);
+  border: 1px solid rgba(255,77,77,0.35);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  font-size: 13px; line-height: 1.4;
+}
+#side-panel .banner b { margin-right: 4px; }
+
 /* ── Twin Status section ─────────────────────────────────────────────── */
 /* Robot-state badge colours — match the zone discs on the canvas. */
 #twin-section .robot-idle           .badge { color: var(--text-dim); }
@@ -194,6 +222,12 @@ html, body {
 #twin-section .robot-fertilizing    .badge { background: rgba(63,217,127,0.18);  color: var(--fert);   }
 #twin-section .robot-returning_home .badge { background: rgba(245,166,35,0.18);  color: var(--warn);   }
 #twin-section .robot-low_battery    .badge { background: rgba(255,77,77,0.20);   color: var(--danger); }
+/* LiDAR liveness — green when /scan is flowing, amber when sweeps lag,
+   red when the topic has gone silent. Uses the same palette tokens as
+   the robot-state badges so the column reads consistently. */
+#twin-section .lidar-ok      .badge { background: rgba(63,217,127,0.18);  color: var(--fert);   }
+#twin-section .lidar-stale   .badge { background: rgba(245,166,35,0.18);  color: var(--warn);   }
+#twin-section .lidar-offline .badge { background: rgba(255,77,77,0.20);   color: var(--danger); }
 
 /* ── Actions section ─────────────────────────────────────────────────── */
 #actions-section { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
