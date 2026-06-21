@@ -232,7 +232,7 @@ within ~33 ms (30 Hz SSE rate):
 - **Twin Status**: Robot is "Navigating", Position updates live.
 - **Canvas**: the blue disc moves from spawn to the zone, spins, settles.
 
-The robot visits **A → B → D → C** (S-curve, shortest path). After the
+The robot visits **A → C → D → B**. After the
 last zone the Mission panel shows `Complete` (green), the Start button
 re-enables, and the action log holds all four events.
 
