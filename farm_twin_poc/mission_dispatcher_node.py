@@ -54,13 +54,14 @@ from std_srvs.srv import Trigger
 
 
 # Aligned with FARM_ZONES in zone_monitor_node.py and the zone markers in
-# worlds/new_world.world. Visit order: top-left spray → top-right fertilize
-# → bottom-right fertilize → bottom-left spray (S-curve, shortest path).
+# worlds/new_world.world. Visit order: all red (spray) zones first
+# (top-left → bottom-left), then all green (fertilize) zones
+# (bottom-right → top-right). Robot returns home after the sequence.
 WAYPOINTS = [
     {'name': 'spray_zone_A',     'x':  0.0, 'y':  0.4, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
-    {'name': 'fertilize_zone_B', 'x':  1.8, 'y':  0.4, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
-    {'name': 'fertilize_zone_D', 'x':  1.6, 'y': -3.0, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
     {'name': 'spray_zone_C',     'x':  0.0, 'y': -3.0, 'yaw': 0.0, 'action': 'spray',     'pause_s': 2.0},
+    {'name': 'fertilize_zone_D', 'x':  1.6, 'y': -3.0, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
+    {'name': 'fertilize_zone_B', 'x':  1.8, 'y':  0.4, 'yaw': 0.0, 'action': 'fertilize', 'pause_s': 2.0},
 ]
 
 
