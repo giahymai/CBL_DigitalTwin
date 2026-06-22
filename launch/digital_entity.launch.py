@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-digital_entity.launch.py — the orchestration / UI side ("DE")
+digital_entity.launch.py — the orchestration / DE side
 ==============================================================
 Farm Twin PoC | Team 5 Terra Minds
 

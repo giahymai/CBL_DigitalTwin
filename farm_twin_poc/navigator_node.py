@@ -69,7 +69,7 @@ class NavigatorNode(Node):
     def __init__(self):
         super().__init__('navigator_node')
 
-        # ---- parameters ----
+        # PARAMETERS:
         self.declare_parameter('odom_topic',             '/odom')
         self.declare_parameter('set_initial_pose',       False)
         # Home pose for /return_home. Defaults to the spawn used by the
@@ -102,7 +102,7 @@ class NavigatorNode(Node):
         self._global_frame   = gp('global_frame').value
         self._robot_frame    = gp('robot_frame').value
 
-        # ---- state ----
+        # STATE:
         self._x = self._y = self._yaw = 0.0
         # idle | navigating | spraying | fertilizing | returning_home
         # spraying / fertilizing are reported while the spin-action is
@@ -114,14 +114,14 @@ class NavigatorNode(Node):
         self._busy = threading.Lock()
         self._cancel_requested = False
 
-        # ---- Nav2 ----
+        # Nav2
         self._nav = BasicNavigator()
 
         # TF for map-frame arrival checks.
         self._tf_buffer   = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
-        # ---- ROS I/O ----
+        # ROS I/O
         self.create_subscription(Odometry,     self._odom_topic,    self._odom_cb,    10)
         self.create_subscription(String,       '/destination',      self._destination_cb, 10)
         self._status_pub   = self.create_publisher(String, '/navigator/status',     10)
@@ -145,7 +145,7 @@ class NavigatorNode(Node):
         self._nav.waitUntilNav2Active()
         self.get_logger().info('Nav2 is active. Awaiting /destination messages.')
 
-    # ---------------- sensor callbacks ----------------
+    # sensor callbacks:
     def _odom_cb(self, msg):
         self._x = msg.pose.pose.position.x
         self._y = msg.pose.pose.position.y
@@ -153,7 +153,7 @@ class NavigatorNode(Node):
         self._yaw = math.atan2(2 * (q.w * q.z + q.x * q.y),
                                1 - 2 * (q.y * q.y + q.z * q.z))
 
-    # ---------------- /destination handler ----------------
+    # /destination handler:
     def _destination_cb(self, msg: String):
         try:
             dest = json.loads(msg.data)
@@ -210,7 +210,7 @@ class NavigatorNode(Node):
             done.data = json.dumps({'name': dest['name'], 'success': success})
             self._reached_pub.publish(done)
 
-    # ---------------- services ----------------
+    # services:
     def _return_home_srv(self, req, res):
         if self._state == 'returning_home':
             res.success = False; res.message = 'Already returning home'; return res
@@ -229,7 +229,7 @@ class NavigatorNode(Node):
                        f'position=({self._x:.2f}, {self._y:.2f})')
         return res
 
-    # ---------------- motion ----------------
+    # motion:
     def _trigger_return_home(self):
         self._cancel_requested = True
         self._nav.cancelTask()
@@ -333,7 +333,7 @@ class NavigatorNode(Node):
     def _wrap(a):
         return math.atan2(math.sin(a), math.cos(a))
 
-    # ---------------- status ----------------
+    # status:
     def _broadcast(self):
         # Periodic heartbeat (every 3 s) so position keeps refreshing even
         # when the state is static. State *transitions* publish immediately

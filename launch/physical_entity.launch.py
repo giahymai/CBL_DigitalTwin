@@ -4,12 +4,11 @@ physical_entity.launch.py — the simulated robot ("PE") side
 ============================================================
 Farm Twin PoC | Team 5 Terra Minds
 
-Brings up everything that represents (or stands in for) the physical
-robot:
+Brings up everything that represents the physical robot:
 
   - Gazebo running worlds/new_world.world
   - The TurtleBot3 Burger spawned at (x_pose, y_pose)
-  - robot_state_publisher (TB3 URDF)
+  - robot_state_publisher
   - Nav2 + AMCL using the baked maps/new_world_map.yaml
   - navigator_node (onboard "drive to a destination" worker)
   - battery_sim_node (fake /battery_state — Gazebo doesn't model this)
@@ -73,15 +72,13 @@ def generate_launch_description():
         DeclareLaunchArgument('map',          default_value=default_map),
         DeclareLaunchArgument('params_file',  default_value=default_params),
         DeclareLaunchArgument('world',        default_value=default_world),
-        # Spawn must match the AMCL seed in nav2_sim.yaml (initial_pose x/y)
-        # and the navigator's home below.
         DeclareLaunchArgument('x_pose',       default_value='1.5'),
         DeclareLaunchArgument('y_pose',       default_value='-2.0'),
         DeclareLaunchArgument(
             'headless', default_value='false',
             description='true = Gazebo server only (no GUI)'),
 
-        # 1) Gazebo with the world.
+        # Gazebo with the world.
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 PathJoinSubstitution([
@@ -91,7 +88,7 @@ def generate_launch_description():
             launch_arguments={'gz_args': [gz_flags, world]}.items(),
         ),
 
-        # 2) Spawn TurtleBot3 in the default namespace (clean TF tree).
+        # Spawn TurtleBot3 in the default namespace (clean TF tree).
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(launch_file_dir, 'spawn_turtlebot3.launch.py')
@@ -99,13 +96,7 @@ def generate_launch_description():
             launch_arguments={'x_pose': x_pose, 'y_pose': y_pose}.items(),
         ),
 
-        # 2b) NOTE: do NOT add a separate /tf + /clock bridge here. The
-        # included spawn_turtlebot3 already starts the TB3 parameter_bridge
-        # from turtlebot3_burger_bridge.yaml. A second bridge would
-        # double-publish /clock and /tf out of order ("Detected jump back
-        # in time"), breaking AMCL TF.
-
-        # 2c) robot_state_publisher — TB3 URDF (base_footprint -> wheels).
+        # robot_state_publisher
         Node(
             package='robot_state_publisher',
             executable='robot_state_publisher',

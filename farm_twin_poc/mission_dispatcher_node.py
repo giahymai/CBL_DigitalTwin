@@ -132,7 +132,7 @@ class MissionDispatcherNode(Node):
                 f'  [{i}] {wp["action"].upper():<11} {wp["name"]} '
                 f'at ({wp["x"]}, {wp["y"]})')
 
-    # ---------------- services ----------------
+    # services:
     def _start_srv(self, req, res):
         with self._lock:
             if self._running:
@@ -184,7 +184,7 @@ class MissionDispatcherNode(Node):
         res.message = msg
         return res
 
-    # ---------------- destination flow ----------------
+    # destination flow:
     def _publish_current(self):
         wp = None
         sequence_done = False
@@ -257,7 +257,7 @@ class MissionDispatcherNode(Node):
         else:
             self._broadcast()
 
-    # ---------------- battery watch ----------------
+    # battery watch:
     def _battery_cb(self, msg: BatteryState) -> None:
         # BatteryState.percentage is 0..1 per ROS convention, but some
         # publishers report 0..100. Accept either, store as 0..100.
@@ -300,7 +300,7 @@ class MissionDispatcherNode(Node):
             return
         self._return_home_client.call_async(Trigger.Request())
 
-    # ---------------- lidar watch ----------------
+    # lidar watch:
     def _lidar_health_cb(self, msg: String) -> None:
         try:
             data = json.loads(msg.data)
@@ -347,7 +347,7 @@ class MissionDispatcherNode(Node):
             self.get_logger().warn(
                 '[DISPATCH] /return_home not available — robot will not move home')
 
-    # ---------------- status ----------------
+    # status:
     def _broadcast(self):
         # JSON so the web UI can render it structurally. web_server_node's
         # _string_to_dict() parses this back out as the `json` field.
