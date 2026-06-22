@@ -1,4 +1,4 @@
-# Farm Twin — Proof of Concept
+# Farm Twin — Proof of Concept - Option B
 
 **Team 5 Terra Minds | SDG 2: Zero Hunger | Course 2IRR10 | TU/e**
 
